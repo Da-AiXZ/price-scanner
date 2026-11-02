@@ -25,6 +25,7 @@
     <string name="action_manual_query">查询</string>
     <string name="action_save">保存</string>
     <string name="action_cancel">取消</string>
+    <string name="action_close">关闭</string>
 
     <string name="dialog_add_title">录入商品</string>
     <string name="dialog_edit_title">修改价格</string>
@@ -41,4 +42,71 @@
     <string name="toast_no_flash">此设备没有可用的闪光灯</string>
     <string name="toast_permission_denied">未获得相机权限</string>
     <string name="toast_camera_error">相机启动失败，请重试</string>
+
+    <string name="title_cart">购物清单</string>
+    <string name="cart_empty">清单还是空的</string>
+    <string name="cart_empty_sub">扫描商品后点「加入清单」，或开启收银模式</string>
+    <string name="cart_total">合计</string>
+    <string name="cart_item_count">共 %1$d 件 · %2$d 种</string>
+    <string name="cart_clear">清空</string>
+    <string name="cart_clear_confirm">确定清空当前清单？</string>
+    <string name="cart_checkout">结算</string>
+    <string name="cart_checkout_title">确认结算</string>
+    <string name="cart_checkout_message">共 %1$d 件商品，合计 ¥%2$s。\n确认后清空当前清单（不会发起支付）。</string>
+    <string name="cart_cleared">清单已清空</string>
+    <string name="cart_unit_price">单价 ¥%1$s</string>
+    <string name="cart_line_total">¥%1$s</string>
+    <string name="action_add_to_cart">加入清单</string>
+    <string name="action_back">返回</string>
+    <string name="toast_added_cart">已加入：%1$s，合计 ¥%2$s</string>
+    <string name="toast_cart_empty">清单为空</string>
+
+    <string name="checkout_mode_off">收银模式：关</string>
+    <string name="checkout_mode_on">收银模式：开</string>
+    <string name="checkout_mode_hint">收银模式：扫到商品自动加入清单并继续扫描</string>
+    <string name="checkout_mode_enabled">已开启收银模式</string>
+    <string name="checkout_mode_disabled">已关闭收银模式</string>
+    <string name="status_waiting_checkout">收银模式</string>
+    <string name="status_waiting_checkout_sub">扫描商品自动加入清单\n点右上角购物车查看合计</string>
+
+    <string name="status_info_loading">正在联网获取商品信息…</string>
+    <string name="status_info_found">资料来自 Open Food Facts 系列，请核对</string>
+    <string name="status_info_not_found">没有找到商品资料，请手动填写</string>
+    <string name="status_info_error">联网查询失败，请手动填写</string>
+    <string name="status_info_busy">免费接口繁忙，请稍后或手动填写</string>
+    <string name="status_info_disabled">联网识别已关闭，请手动填写</string>
+
+    <string name="toast_exporting">正在生成价格表…</string>
+    <string name="toast_export_ready">价格表已生成</string>
+    <string name="toast_export_failed">导出失败</string>
+    <string name="toast_importing">正在读取价格表…</string>
+    <string name="error_export_no_data">还没有可导出的商品</string>
+    <string name="toast_import_failed">导入失败：%1$s</string>
+    <string name="toast_import_done">导入完成：新增 %1$d，更新 %2$d，保留本地 %3$d</string>
+    <string name="toast_import_done_replace">导入完成：共 %1$d 个商品（覆盖模式）</string>
+    <string name="import_title">导入价格表</string>
+    <string name="import_message">文件导出于 %1$s\n包含 %2$d 个商品。\n\n合并：新增 %3$d，更新 %4$d，保留本地 %5$d\n完全覆盖：将删除本地 %6$d 个商品（会先自动备份）</string>
+    <string name="import_merge">合并导入</string>
+    <string name="import_replace">完全覆盖</string>
+    <string name="import_replace_confirm">确定用文件完全覆盖本地价格表？\n将删除 %1$d 个本地商品，并先自动备份。</string>
+    <string name="backup_title">恢复自动备份</string>
+    <string name="backup_restore_action">恢复</string>
+    <string name="backup_empty">暂无自动备份</string>
+    <string name="backup_select">选择要恢复的备份</string>
+    <string name="backup_confirm">确定恢复「%1$s」？当前数据会先自动备份。</string>
+    <string name="backup_done">备份已恢复</string>
+
+    <string name="menu_export_share">导出并分享</string>
+    <string name="menu_export_save">保存价格表到文件</string>
+    <string name="menu_import">导入价格表</string>
+    <string name="menu_restore">恢复自动备份</string>
+    <string name="menu_settings">设置与数据来源</string>
+    <string name="settings_title">设置</string>
+    <string name="settings_network">联网查询商品信息</string>
+    <string name="settings_network_sub">使用 Open Food Facts 系列免费接口，可能查不到国内商品</string>
+    <string name="settings_clear_cache">清除商品资料缓存</string>
+    <string name="settings_clear_cache_done">商品资料缓存已清除</string>
+    <string name="settings_about">数据来源：Open Food Facts、Open Beauty Facts、Open Pet Food Facts、Open Products Facts（ODbL 1.0）。资料由用户贡献，仅供参考，请核对后保存。</string>
+    <string name="about_version">扫码查价 v%1$s</string>
+    <string name="about_github">github.com/Da-AiXZ/price-scanner</string>
 </resources>

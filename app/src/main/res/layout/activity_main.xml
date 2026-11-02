@@ -43,6 +43,37 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="4dp">
+
+            <ImageButton
+                android:id="@+id/btn_cart"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/title_cart"
+                android:padding="11dp"
+                android:src="@drawable/ic_cart"
+                    android:tint="@color/text_primary" />
+
+            <TextView
+                android:id="@+id/cart_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="18dp"
+                android:layout_gravity="top|end"
+                android:layout_marginTop="3dp"
+                android:background="@drawable/bg_badge"
+                android:gravity="center"
+                android:minWidth="18dp"
+                android:paddingHorizontal="4dp"
+                android:textColor="@color/on_accent"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </FrameLayout>
+
         <ImageButton
             android:id="@+id/btn_torch"
             android:layout_width="44dp"
@@ -51,7 +82,7 @@
             android:contentDescription="@string/hint_torch"
             android:padding="10dp"
             android:src="@drawable/ic_flash"
-            app:tint="@color/text_primary" />
+                android:tint="@color/text_primary" />
 
         <ImageButton
             android:id="@+id/btn_manual"
@@ -62,7 +93,18 @@
             android:contentDescription="@string/hint_manual"
             android:padding="10dp"
             android:src="@drawable/ic_keyboard"
-            app:tint="@color/text_primary" />
+                android:tint="@color/text_primary" />
+
+        <ImageButton
+            android:id="@+id/btn_more"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="4dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/menu_settings"
+            android:padding="10dp"
+            android:src="@drawable/ic_more"
+                android:tint="@color/text_primary" />
     </LinearLayout>
 
     <LinearLayout
@@ -100,6 +142,21 @@
                 android:text="@string/status_waiting_sub"
                 android:textColor="@color/text_muted"
                 android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/btn_checkout_mode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:background="@drawable/bg_chip"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:padding="10dp"
+                android:text="@string/checkout_mode_off"
+                android:textColor="@color/accent"
+                android:textSize="13sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
@@ -155,10 +212,20 @@
                     android:textStyle="bold" />
             </LinearLayout>
 
-            <LinearLayout
+            <TextView
+                android:id="@+id/btn_add_cart"
+                style="@style/Text.Action"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
+                android:background="@drawable/bg_button_primary"
+                android:text="@string/action_add_to_cart"
+                android:textColor="@color/on_accent" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
                 android:orientation="horizontal">
 
                 <TextView
@@ -167,9 +234,9 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:background="@drawable/bg_button_primary"
+                    android:background="@drawable/bg_button_secondary"
                     android:text="@string/action_rescan"
-                    android:textColor="@color/on_accent" />
+                    android:textColor="@color/text_primary" />
 
                 <TextView
                     android:id="@+id/btn_edit"
