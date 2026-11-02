@@ -50,7 +50,8 @@
             android:name=".ScanAddActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.PriceScanner.ScanAdd" />
+            android:theme="@style/Theme.PriceScanner.ScanAdd"
+            android:windowSoftInputMode="adjustResize" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

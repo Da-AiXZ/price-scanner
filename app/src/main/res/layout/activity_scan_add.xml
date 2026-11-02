@@ -5,88 +5,119 @@
     android:layout_height="match_parent"
     android:background="@color/scan_add_bg">
 
+    <androidx.camera.view.PreviewView
+        android:id="@+id/sa_preview"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <com.example.pricescanner.ScannerOverlayView
+        android:id="@+id/sa_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <LinearLayout
+        android:id="@+id/sa_top"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_top_scrim"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp">
+
+        <ImageButton
+            android:id="@+id/sa_back"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_dark_button"
+            android:contentDescription="@string/action_back"
+            android:padding="10dp"
+            android:src="@drawable/ic_chevron_left"
+            android:tint="@color/white" />
+
+        <TextView
+            android:id="@+id/sa_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/scan_add_title"
+            android:textColor="@color/white"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <ImageButton
+            android:id="@+id/sa_torch"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_dark_button"
+            android:contentDescription="@string/hint_torch"
+            android:padding="10dp"
+            android:src="@drawable/ic_bolt"
+            android:tint="@color/white" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/sa_hint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="44dp"
+        android:background="@drawable/bg_toast"
+        android:gravity="center"
+        android:paddingStart="18dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="10dp"
+        android:text="@string/scan_add_hint"
+        android:textColor="@color/white"
+        android:textSize="13sp" />
+
+    <View
+        android:id="@+id/sa_sheet_mask"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical">
+        android:background="@color/sheet_mask"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:id="@+id/sa_sheet_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:visibility="gone">
 
         <LinearLayout
-            android:id="@+id/sa_top"
+            android:id="@+id/sa_sheet_panel"
             android:layout_width="match_parent"
-            android:layout_height="56dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp">
-
-            <ImageButton
-                android:id="@+id/sa_back"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_dark_button"
-                android:contentDescription="@string/action_back"
-                android:padding="10dp"
-                android:src="@drawable/ic_chevron_left"
-                android:tint="@color/white" />
-
-            <TextView
-                android:id="@+id/sa_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
-                android:fontFamily="sans-serif-medium"
-                android:text="@string/scan_add_title"
-                android:textColor="@color/white"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <ImageButton
-                android:id="@+id/sa_torch"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_dark_button"
-                android:contentDescription="@string/hint_torch"
-                android:padding="10dp"
-                android:src="@drawable/ic_bolt"
-                android:tint="@color/white" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:gravity="center"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_sheet"
             android:orientation="vertical"
-            android:paddingBottom="70dp">
+            android:paddingBottom="26dp">
 
-            <FrameLayout
-                android:id="@+id/sa_frame"
-                android:layout_width="232dp"
-                android:layout_height="232dp"
-                android:background="@drawable/bg_scan_frame"
-                android:clipToOutline="true">
+            <View
+                android:layout_width="38dp"
+                android:layout_height="5dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="14dp"
+                android:background="@drawable/bg_grabber" />
 
-                <androidx.camera.view.PreviewView
-                    android:id="@+id/sa_preview"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent" />
-
-                <com.example.pricescanner.ScannerOverlayView
-                    android:id="@+id/sa_overlay"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent" />
-            </FrameLayout>
-
-            <TextView
-                android:id="@+id/sa_hint"
-                android:layout_width="wrap_content"
+            <ScrollView
+                android:id="@+id/sa_sheet_scroll"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="28dp"
-                android:gravity="center"
-                android:text="@string/scan_add_hint"
-                android:textColor="#8CFFFFFF"
-                android:textSize="13sp" />
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/sa_sheet_body"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
         </LinearLayout>
-    </LinearLayout>
+    </FrameLayout>
 </FrameLayout>

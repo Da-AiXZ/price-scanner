@@ -24,10 +24,14 @@ public class ScannerOverlayView extends View {
     public static final int MODE_SCANNING = 1;
     public static final int MODE_SUCCESS = 2;
 
+    public static final int FRAME_INSET = 0;
+    public static final int FRAME_WIDE = 1;
+
     private final Paint cornerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint flashPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint focusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint scrimPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF frameRect = new RectF();
 
     private final int colorWhite;
@@ -35,6 +39,7 @@ public class ScannerOverlayView extends View {
     private final int colorBlue;
 
     private int mode = MODE_IDLE;
+    private int frameStyle = FRAME_INSET;
     private float scanProgress;
     private ValueAnimator scanAnimator;
 
@@ -70,14 +75,47 @@ public class ScannerOverlayView extends View {
         focusPaint.setStrokeWidth(dp(2));
         focusPaint.setStrokeCap(Paint.Cap.ROUND);
         focusPaint.setColor(colorMint);
+
+        scrimPaint.setStyle(Paint.Style.FILL);
+        scrimPaint.setColor(0x4D000000);
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        float inset = dp(16);
-        frameRect.set(inset, inset, w - inset, h - inset);
+        updateFrameRect();
         startScanAnimation();
+    }
+
+    private void updateFrameRect() {
+        int w = getWidth();
+        int h = getHeight();
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        if (frameStyle == FRAME_WIDE) {
+            float frameWidth = Math.min(w - dp(48), dp(360));
+            float frameHeight = Math.min(frameWidth * 0.55f, dp(200));
+            float centerX = w / 2f;
+            float centerY = h * 0.46f;
+            frameRect.set(
+                    centerX - frameWidth / 2f,
+                    centerY - frameHeight / 2f,
+                    centerX + frameWidth / 2f,
+                    centerY + frameHeight / 2f);
+        } else {
+            float inset = dp(16);
+            frameRect.set(inset, inset, w - inset, h - inset);
+        }
+    }
+
+    public void setFrameStyle(int style) {
+        if (frameStyle == style) {
+            return;
+        }
+        frameStyle = style;
+        updateFrameRect();
+        invalidate();
     }
 
     @Override
@@ -85,6 +123,9 @@ public class ScannerOverlayView extends View {
         super.onDraw(canvas);
         if (frameRect.isEmpty()) {
             return;
+        }
+        if (frameStyle == FRAME_WIDE) {
+            drawScrim(canvas);
         }
         drawCorners(canvas);
         if (mode != MODE_SUCCESS) {
@@ -96,6 +137,15 @@ public class ScannerOverlayView extends View {
         if (focusAlpha > 0) {
             drawFocusRing(canvas);
         }
+    }
+
+    private void drawScrim(Canvas canvas) {
+        int w = getWidth();
+        int h = getHeight();
+        canvas.drawRect(0, 0, w, frameRect.top, scrimPaint);
+        canvas.drawRect(0, frameRect.bottom, w, h, scrimPaint);
+        canvas.drawRect(0, frameRect.top, frameRect.left, frameRect.bottom, scrimPaint);
+        canvas.drawRect(frameRect.right, frameRect.top, w, frameRect.bottom, scrimPaint);
     }
 
     private void drawCorners(Canvas canvas) {

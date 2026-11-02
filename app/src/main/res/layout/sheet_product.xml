@@ -74,6 +74,7 @@
             android:inputType="text"
             android:maxLines="1"
             android:paddingStart="14dp"
+            android:paddingTop="6dp"
             android:paddingEnd="14dp"
             android:textColor="@color/ink"
             android:textColorHint="#B4B4BE"
@@ -109,6 +110,7 @@
                     android:inputType="numberDecimal"
                     android:maxLines="1"
                     android:paddingStart="14dp"
+                    android:paddingTop="6dp"
                     android:paddingEnd="14dp"
                     android:textColor="@color/ink"
                     android:textColorHint="#B4B4BE"
@@ -140,6 +142,7 @@
                     android:inputType="text"
                     android:maxLines="1"
                     android:paddingStart="14dp"
+                    android:paddingTop="6dp"
                     android:paddingEnd="14dp"
                     android:textColor="@color/ink"
                     android:textColorHint="#B4B4BE"
@@ -153,30 +156,50 @@
             android:layout_marginTop="18dp"
             android:orientation="horizontal">
 
-            <TextView
+            <FrameLayout
                 android:id="@+id/btn_cancel"
                 android:layout_width="0dp"
                 android:layout_height="44dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_btn_ghost"
-                android:gravity="center"
-                android:text="@string/action_cancel"
-                android:textColor="@color/ink"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:clickable="true"
+                android:contentDescription="@string/action_cancel"
+                android:focusable="true">
 
-            <TextView
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:text="@string/action_cancel"
+                    android:textAlignment="center"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </FrameLayout>
+
+            <FrameLayout
                 android:id="@+id/btn_save"
                 android:layout_width="0dp"
                 android:layout_height="44dp"
                 android:layout_marginStart="10dp"
                 android:layout_weight="1"
                 android:background="@drawable/bg_btn_primary"
-                android:gravity="center"
-                android:text="@string/action_save"
-                android:textColor="@color/white"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:clickable="true"
+                android:contentDescription="@string/action_save"
+                android:focusable="true">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:text="@string/action_save"
+                    android:textAlignment="center"
+                    android:textColor="@color/white"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </FrameLayout>
         </LinearLayout>
 
         <TextView
@@ -184,8 +207,10 @@
             android:layout_width="match_parent"
             android:layout_height="44dp"
             android:layout_marginTop="8dp"
+            android:background="@drawable/bg_btn_ghost"
             android:gravity="center"
             android:text="@string/action_delete"
+            android:textAlignment="center"
             android:textColor="@color/red"
             android:textSize="13sp" />
     </LinearLayout>

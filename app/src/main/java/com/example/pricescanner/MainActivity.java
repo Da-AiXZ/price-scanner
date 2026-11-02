@@ -237,7 +237,6 @@ public class MainActivity extends AppCompatActivity {
     private ActivityResultLauncher<String> permissionLauncher;
     private ActivityResultLauncher<String> createDocumentLauncher;
     private ActivityResultLauncher<String[]> openDocumentLauncher;
-    private ActivityResultLauncher<Intent> scanAddLauncher;
     private File pendingExportFile;
     private String lastHandledImportUri;
 
@@ -292,29 +291,6 @@ public class MainActivity extends AppCompatActivity {
                     if (uri != null) {
                         startImport(uri);
                     }
-                });
-
-        scanAddLauncher = registerForActivityResult(
-                new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    if (result.getResultCode() != Activity.RESULT_OK
-                            || result.getData() == null) {
-                        return;
-                    }
-                    String barcode = result.getData()
-                            .getStringExtra(ScanAddActivity.EXTRA_BARCODE);
-                    if (barcode == null || barcode.isEmpty()) {
-                        return;
-                    }
-                    ioExecutor.execute(() -> {
-                        Product product = dbHelper.findProduct(barcode);
-                        runOnUiThread(() -> {
-                            if (destroyed || isFinishing()) {
-                                return;
-                            }
-                            showProductSheet(barcode, product, product == null);
-                        });
-                    });
                 });
 
         setupTabs();
@@ -1495,7 +1471,7 @@ public class MainActivity extends AppCompatActivity {
         popup.setElevation(dp(12));
         content.findViewById(R.id.pop_scan).setOnClickListener(v -> {
             popup.dismiss();
-            scanAddLauncher.launch(new Intent(this, ScanAddActivity.class));
+            startActivity(new Intent(this, ScanAddActivity.class));
         });
         content.findViewById(R.id.pop_manual).setOnClickListener(v -> {
             popup.dismiss();
@@ -1989,7 +1965,7 @@ public class MainActivity extends AppCompatActivity {
     private void showAboutSheet() {
         View content = showSheet(R.layout.sheet_about);
         TextView version = content.findViewById(R.id.about_version);
-        version.setText(getString(R.string.about_version, "1.7"));
+        version.setText(getString(R.string.about_version, "1.8"));
         content.findViewById(R.id.about_close).setOnClickListener(v -> closeSheet());
     }
 
@@ -2157,6 +2133,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        refreshTab(currentTab);
         refreshCartBadge();
     }
 
