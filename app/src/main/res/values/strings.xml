@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">扫码查价</string>
+    <string name="title_scan">扫码查价</string>
+    <string name="hint_torch">手电筒</string>
+    <string name="hint_manual">手动输入条码</string>
+
+    <string name="status_waiting">等待扫描</string>
+    <string name="status_waiting_sub">将商品包装上的条形码对准取景框\n首次扫描的商品可直接录入价格</string>
+    <string name="status_lookup">正在查询价格…</string>
+    <string name="status_not_found">未收录的商品</string>
+    <string name="status_not_found_sub">录入商品名称和价格后，下次扫描即可直接显示</string>
+    <string name="status_permission">需要相机权限</string>
+    <string name="status_permission_sub">开启相机权限后即可扫描商品条形码</string>
+    <string name="status_no_camera">相机启动失败</string>
+    <string name="status_no_camera_sub">请检查设备相机是否可用后重试</string>
+
+    <string name="barcode_prefix">条码 %1$s</string>
+    <string name="currency">¥</string>
+
+    <string name="action_rescan">继续扫描</string>
+    <string name="action_edit_price">修改价格</string>
+    <string name="action_add_price">录入价格</string>
+    <string name="action_permission">去授权</string>
+    <string name="action_manual_query">查询</string>
+    <string name="action_save">保存</string>
+    <string name="action_cancel">取消</string>
+
+    <string name="dialog_add_title">录入商品</string>
+    <string name="dialog_edit_title">修改价格</string>
+    <string name="dialog_name_label">商品名称</string>
+    <string name="dialog_name_hint">例如：农夫山泉 550ml</string>
+    <string name="dialog_price_label">价格（元）</string>
+    <string name="dialog_price_hint">例如：2.00</string>
+    <string name="dialog_manual_title">手动输入条码</string>
+    <string name="dialog_manual_hint">输入商品包装上的数字条码</string>
+    <string name="error_name">请输入商品名称</string>
+    <string name="error_price">请输入正确的价格</string>
+    <string name="error_barcode">请输入有效的条码</string>
+    <string name="toast_saved">价格已保存</string>
+    <string name="toast_no_flash">此设备没有可用的闪光灯</string>
+    <string name="toast_permission_denied">未获得相机权限</string>
+    <string name="toast_camera_error">相机启动失败，请重试</string>
+</resources>

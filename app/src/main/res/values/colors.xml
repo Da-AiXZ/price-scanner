@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#0B0D10</color>
+    <color name="card">#171B21</color>
+    <color name="card_stroke">#2A3038</color>
+    <color name="secondary_bg">#232830</color>
+    <color name="accent">#00E676</color>
+    <color name="accent_pressed">#00C766</color>
+    <color name="text_primary">#F5F7FA</color>
+    <color name="text_muted">#98A2AE</color>
+    <color name="on_accent">#062B17</color>
+    <color name="scrim_start">#C4000000</color>
+    <color name="scrim_end">#00000000</color>
+    <color name="dialog_bg">#1A1E24</color>
+</resources>
