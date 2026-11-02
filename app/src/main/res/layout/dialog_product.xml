@@ -58,14 +58,5 @@
             android:layout_marginTop="14dp"
             android:textColor="@color/text_muted"
             android:textSize="12sp" />
-
-        <TextView
-            android:id="@+id/dialog_info_status"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="@color/accent"
-            android:textSize="12sp"
-            android:visibility="gone" />
     </LinearLayout>
 </ScrollView>

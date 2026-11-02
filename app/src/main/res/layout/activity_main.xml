@@ -101,7 +101,7 @@
             android:layout_height="44dp"
             android:layout_marginStart="4dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/menu_settings"
+            android:contentDescription="@string/menu_about"
             android:padding="10dp"
             android:src="@drawable/ic_more"
                 android:tint="@color/text_primary" />

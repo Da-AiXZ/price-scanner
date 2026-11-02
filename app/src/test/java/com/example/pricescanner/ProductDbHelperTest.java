@@ -9,7 +9,6 @@ import android.database.sqlite.SQLiteDatabase;
 import android.view.ContextThemeWrapper;
 import android.view.LayoutInflater;
 
-import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
@@ -17,7 +16,6 @@ import org.robolectric.RuntimeEnvironment;
 import org.robolectric.annotation.Config;
 
 import java.io.File;
-import java.lang.reflect.Method;
 import java.util.Collections;
 
 @RunWith(RobolectricTestRunner.class)
@@ -169,30 +167,6 @@ public class ProductDbHelperTest {
             assertNotNull(cached);
             assertEquals("人工确认的新名称", cached.name);
         }
-    }
-
-    @Test
-    public void buildsReadableProductNames() throws Exception {
-        Method buildDisplayName = OpenFoodFactsClient.class.getDeclaredMethod(
-                "buildDisplayName", String.class, String.class, String.class);
-        buildDisplayName.setAccessible(true);
-        assertEquals("六神花露水（195ml）", buildDisplayName.invoke(
-                null, "花露水", "六神", "195ml"));
-        assertEquals("六神花露水 195ml", buildDisplayName.invoke(
-                null, "六神花露水 195ml", "六神", "195ml"));
-
-        Method buildSpec = OpenFoodFactsClient.class.getDeclaredMethod(
-                "buildSpec", JSONObject.class);
-        buildSpec.setAccessible(true);
-        JSONObject product = new JSONObject();
-        product.put("quantity", "400 g e");
-        assertEquals("400g", buildSpec.invoke(null, product));
-
-        Method selectBrand = OpenFoodFactsClient.class.getDeclaredMethod(
-                "selectBrand", String.class, String.class);
-        selectBrand.setAccessible(true);
-        assertEquals("Narta", selectBrand.invoke(null, "LASCAD, Narta",
-                "Anti-transpirant Narta Peau parfaite"));
     }
 
     @Test

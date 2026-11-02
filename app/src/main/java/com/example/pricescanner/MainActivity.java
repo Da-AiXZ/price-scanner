@@ -8,24 +8,23 @@ import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.RectF;
+import android.hardware.camera2.CaptureRequest;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.util.Log;
+import android.util.Size;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.LinearLayout;
 import android.widget.PopupMenu;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -36,12 +35,15 @@ import androidx.annotation.NonNull;
 import androidx.annotation.OptIn;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.SwitchCompat;
+import androidx.camera.camera2.interop.Camera2Interop;
 import androidx.camera.core.Camera;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.ExperimentalGetImage;
+import androidx.camera.core.FocusMeteringAction;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
+import androidx.camera.core.MeteringPoint;
+import androidx.camera.core.MeteringPointFactory;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
@@ -74,19 +76,19 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "PriceScanner";
     private static final String PREFS_NAME = "settings";
-    private static final String PREF_NETWORK = "network_lookup";
     private static final String PREF_CHECKOUT = "checkout_mode";
 
     private static final int MENU_EXPORT_SHARE = 1;
     private static final int MENU_EXPORT_SAVE = 2;
     private static final int MENU_IMPORT = 3;
     private static final int MENU_RESTORE = 4;
-    private static final int MENU_SETTINGS = 5;
+    private static final int MENU_ABOUT = 5;
 
     private static final int STATE_IDLE = 0;
     private static final int STATE_LOOKUP = 1;
@@ -94,8 +96,8 @@ public class MainActivity extends AppCompatActivity {
     private static final int STATE_EMPTY = 3;
     private static final int STATE_PERMISSION = 4;
 
-    private static final int REQUIRED_STABLE_FRAMES = 2;
-    private static final long DUPLICATE_ADD_WINDOW_MS = 1500;
+    private static final int REQUIRED_STABLE_FRAMES = 1;
+    private static final int REQUIRED_EMPTY_FRAMES = 3;
 
     private PreviewView previewView;
     private ScannerOverlayView scannerOverlay;
@@ -123,7 +125,6 @@ public class MainActivity extends AppCompatActivity {
     private ToneGenerator toneGenerator;
     private ExecutorService cameraExecutor;
     private ExecutorService ioExecutor;
-    private ExecutorService networkExecutor;
     private ProductDbHelper dbHelper;
     private SharedPreferences preferences;
 
@@ -136,8 +137,9 @@ public class MainActivity extends AppCompatActivity {
     private Product currentProduct;
     private String pendingBarcode;
     private int pendingFrames;
-    private String lastAddedBarcode;
-    private long lastAddedAt;
+    private String checkoutWaitBarcode;
+    private int checkoutWaitEmptyFrames;
+    private long checkoutWaitStartedAt;
 
     private ActivityResultLauncher<String> permissionLauncher;
     private ActivityResultLauncher<String> createDocumentLauncher;
@@ -160,7 +162,6 @@ public class MainActivity extends AppCompatActivity {
 
         cameraExecutor = Executors.newSingleThreadExecutor();
         ioExecutor = Executors.newSingleThreadExecutor();
-        networkExecutor = Executors.newSingleThreadExecutor();
         dbHelper = new ProductDbHelper(this);
         barcodeScanner = BarcodeScanning.getClient(new BarcodeScannerOptions.Builder()
                 .setBarcodeFormats(
@@ -263,6 +264,13 @@ public class MainActivity extends AppCompatActivity {
         btnMore.setOnClickListener(this::showOverflowMenu);
         btnCart.setOnClickListener(v -> startActivity(new Intent(this, CartActivity.class)));
         btnCheckoutMode.setOnClickListener(v -> toggleCheckoutMode());
+        previewView.setOnTouchListener((v, event) -> {
+            if (event.getAction() == MotionEvent.ACTION_UP) {
+                focusAt(event.getX(), event.getY(), true);
+                v.performClick();
+            }
+            return true;
+        });
 
         findViewById(R.id.btn_rescan).setOnClickListener(v -> startScanning());
         findViewById(R.id.btn_rescan_empty).setOnClickListener(v -> startScanning());
@@ -332,11 +340,18 @@ public class MainActivity extends AppCompatActivity {
             try {
                 cameraProvider = future.get();
 
-                Preview preview = new Preview.Builder().build();
+                Preview.Builder previewBuilder = new Preview.Builder()
+                        .setTargetResolution(new Size(1920, 1080));
+                new Camera2Interop.Extender<>(previewBuilder)
+                        .setCaptureRequestOption(
+                                CaptureRequest.CONTROL_AF_MODE,
+                                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+                Preview preview = previewBuilder.build();
                 preview.setSurfaceProvider(previewView.getSurfaceProvider());
 
                 imageAnalysis = new ImageAnalysis.Builder()
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setTargetResolution(new Size(1280, 720))
                         .build();
 
                 cameraProvider.unbindAll();
@@ -346,6 +361,8 @@ public class MainActivity extends AppCompatActivity {
                 if (torchOn && camera.getCameraInfo().hasFlashUnit()) {
                     camera.getCameraControl().enableTorch(true);
                 }
+
+                previewView.postDelayed(this::focusCenter, 600);
 
                 if (state == STATE_IDLE || state == STATE_PERMISSION) {
                     startScanning();
@@ -370,16 +387,23 @@ public class MainActivity extends AppCompatActivity {
         scanning = true;
         pendingBarcode = null;
         pendingFrames = 0;
+        checkoutWaitBarcode = null;
+        checkoutWaitEmptyFrames = 0;
+        checkoutWaitStartedAt = 0;
         state = STATE_IDLE;
         showIdlePanel();
         scannerOverlay.setScanning(true);
         imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
+        previewView.postDelayed(this::focusCenter, 300);
     }
 
     private void pauseScanning() {
         scanning = false;
         pendingBarcode = null;
         pendingFrames = 0;
+        checkoutWaitBarcode = null;
+        checkoutWaitEmptyFrames = 0;
+        checkoutWaitStartedAt = 0;
         if (imageAnalysis != null) {
             imageAnalysis.clearAnalyzer();
         }
@@ -405,6 +429,10 @@ public class MainActivity extends AppCompatActivity {
                     if (!scanning) {
                         return;
                     }
+                    if (checkoutWaitBarcode != null) {
+                        handleCheckoutWait(barcodes, imageProxy);
+                        return;
+                    }
                     String value = pickBarcodeInFrame(barcodes, imageProxy);
                     if (value == null) {
                         pendingBarcode = null;
@@ -425,6 +453,37 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .addOnFailureListener(e -> Log.w(TAG, "Barcode processing failed", e))
                 .addOnCompleteListener(task -> imageProxy.close());
+    }
+
+    private void handleCheckoutWait(
+            java.util.List<Barcode> barcodes, ImageProxy imageProxy) {
+        boolean targetSeen = false;
+        for (Barcode barcode : barcodes) {
+            String raw = barcode.getRawValue();
+            if (raw != null && raw.trim().equals(checkoutWaitBarcode)) {
+                targetSeen = true;
+                break;
+            }
+        }
+        String inFrame = pickBarcodeInFrame(barcodes, imageProxy);
+        if (targetSeen || inFrame != null) {
+            checkoutWaitEmptyFrames = 0;
+            return;
+        }
+
+        checkoutWaitEmptyFrames++;
+        boolean enoughEmptyFrames = checkoutWaitEmptyFrames >= REQUIRED_EMPTY_FRAMES;
+        boolean enoughTime = System.currentTimeMillis() - checkoutWaitStartedAt >= 2000;
+        if (enoughEmptyFrames && enoughTime) {
+            checkoutWaitBarcode = null;
+            checkoutWaitEmptyFrames = 0;
+            checkoutWaitStartedAt = 0;
+            runOnUiThread(() -> {
+                if (!isFinishing() && !isDestroyed()) {
+                    showIdlePanel();
+                }
+            });
+        }
     }
 
     /**
@@ -566,7 +625,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 if (product != null) {
                     if (checkoutMode) {
-                        addProductToCart(product, true);
+                        addProductToCart(product);
                     } else {
                         showProduct(product);
                     }
@@ -656,6 +715,33 @@ public class MainActivity extends AppCompatActivity {
                 ContextCompat.getColor(this, torchOn ? R.color.accent : R.color.text_primary)));
     }
 
+    private void focusCenter() {
+        if (previewView == null || previewView.getWidth() <= 0) {
+            return;
+        }
+        focusAt(previewView.getWidth() / 2f, previewView.getHeight() * 0.44f, false);
+    }
+
+    private void focusAt(float x, float y, boolean tap) {
+        if (camera == null) {
+            return;
+        }
+        try {
+            MeteringPointFactory factory = previewView.getMeteringPointFactory();
+            MeteringPoint point = factory.createPoint(x, y);
+            int flags = FocusMeteringAction.FLAG_AF;
+            if (tap) {
+                flags |= FocusMeteringAction.FLAG_AE;
+            }
+            FocusMeteringAction action = new FocusMeteringAction.Builder(point, flags)
+                    .setAutoCancelDuration(5, TimeUnit.SECONDS)
+                    .build();
+            camera.getCameraControl().startFocusAndMetering(action);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to focus camera", e);
+        }
+    }
+
     private void toggleCheckoutMode() {
         checkoutMode = !checkoutMode;
         preferences.edit().putBoolean(PREF_CHECKOUT, checkoutMode).apply();
@@ -683,20 +769,10 @@ public class MainActivity extends AppCompatActivity {
         if (currentProduct == null) {
             return;
         }
-        addProductToCart(currentProduct, false);
+        addProductToCart(currentProduct);
     }
 
-    private void addProductToCart(Product product, boolean automatic) {
-        long now = System.currentTimeMillis();
-        if (automatic
-                && product.barcode.equals(lastAddedBarcode)
-                && now - lastAddedAt < DUPLICATE_ADD_WINDOW_MS) {
-            startScanning();
-            return;
-        }
-        lastAddedBarcode = product.barcode;
-        lastAddedAt = now;
-
+    private void addProductToCart(Product product) {
         ioExecutor.execute(() -> {
             dbHelper.addToCart(product);
             ProductDbHelper.CartSummary summary = dbHelper.getCartSummary();
@@ -714,7 +790,28 @@ public class MainActivity extends AppCompatActivity {
                         Toast.LENGTH_SHORT).show();
             });
         });
-        startScanning();
+        startBarcodeRemovalWait(product);
+    }
+
+    private void startBarcodeRemovalWait(Product product) {
+        if (imageAnalysis == null) {
+            startScanning();
+            return;
+        }
+        checkoutWaitBarcode = product.barcode;
+        checkoutWaitEmptyFrames = 0;
+        checkoutWaitStartedAt = System.currentTimeMillis();
+        pendingBarcode = null;
+        pendingFrames = 0;
+        scanning = true;
+        state = STATE_IDLE;
+        idleTitle.setText(R.string.status_checkout_added);
+        idleSubtitle.setText(getString(R.string.status_checkout_locked, product.name));
+        updateCheckoutModeUi();
+        showOnly(panelIdle);
+        scannerOverlay.setScanning(true);
+        imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
+        previewView.postDelayed(this::focusCenter, 300);
     }
 
     private void refreshCartBadge() {
@@ -742,10 +839,6 @@ public class MainActivity extends AppCompatActivity {
         cartBadge.setVisibility(View.VISIBLE);
     }
 
-    private boolean networkLookupEnabled() {
-        return preferences.getBoolean(PREF_NETWORK, true);
-    }
-
     private void showProductDialog(Product existing) {
         if (currentBarcode == null) {
             return;
@@ -756,16 +849,10 @@ public class MainActivity extends AppCompatActivity {
         EditText nameInput = content.findViewById(R.id.edit_name);
         EditText priceInput = content.findViewById(R.id.edit_price);
         TextView barcodeView = content.findViewById(R.id.dialog_barcode);
-        TextView statusView = content.findViewById(R.id.dialog_info_status);
         barcodeView.setText(getString(R.string.barcode_prefix, barcode));
 
-        final String[] autoBrand = {existing != null ? existing.brand : ""};
-        final String[] autoSpec = {existing != null ? existing.spec : ""};
-        final String[] autoSource = {existing != null ? existing.source : null};
-        final String[] autoType = {""};
-        final boolean[] nameTouched = {false};
-        final boolean[] programmatic = {false};
-        final boolean[] dismissed = {false};
+        final String[] brand = {existing != null ? existing.brand : ""};
+        final String[] spec = {existing != null ? existing.spec : ""};
 
         if (existing != null) {
             nameInput.setText(existing.name);
@@ -773,23 +860,6 @@ public class MainActivity extends AppCompatActivity {
             priceInput.setText(MoneyUtils.formatCents(existing.priceCents));
         }
         nameInput.requestFocus();
-
-        nameInput.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                if (!programmatic[0]) {
-                    nameTouched[0] = true;
-                }
-            }
-
-            @Override
-            public void afterTextChanged(Editable s) {
-            }
-        });
 
         AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PriceScanner_Dialog)
                 .setTitle(existing == null ? R.string.dialog_add_title : R.string.dialog_edit_title)
@@ -817,21 +887,8 @@ public class MainActivity extends AppCompatActivity {
                 final long finalPriceCents = priceCents;
                 ioExecutor.execute(() -> {
                     Product product = dbHelper.saveProduct(
-                            barcode, finalName,
-                            autoBrand[0], autoSpec[0],
+                            barcode, finalName, brand[0], spec[0],
                             finalPriceCents, "manual");
-                    if (autoSource[0] != null && !"manual".equals(autoSource[0])) {
-                        dbHelper.upsertProductInfo(new ProductInfo(
-                                barcode,
-                                finalName,
-                                autoBrand[0],
-                                autoSpec[0],
-                                autoType[0],
-                                autoSource[0],
-                                System.currentTimeMillis(),
-                                true,
-                                nameTouched[0]));
-                    }
                     runOnUiThread(() -> {
                         if (isFinishing() || isDestroyed()) {
                             return;
@@ -840,7 +897,7 @@ public class MainActivity extends AppCompatActivity {
                         Toast.makeText(
                                 MainActivity.this, R.string.toast_saved, Toast.LENGTH_SHORT).show();
                         if (checkoutMode) {
-                            addProductToCart(product, true);
+                            addProductToCart(product);
                         } else {
                             showProduct(product);
                         }
@@ -849,149 +906,7 @@ public class MainActivity extends AppCompatActivity {
             });
         });
 
-        dialog.setOnDismissListener(ignored -> dismissed[0] = true);
         dialog.show();
-
-        if (existing != null) {
-            statusView.setVisibility(View.GONE);
-        } else {
-            loadProductInfoForDialog(
-                    barcode, nameInput, statusView,
-                    autoBrand, autoSpec, autoSource, autoType,
-                    nameTouched, programmatic, dismissed);
-        }
-    }
-
-    private void loadProductInfoForDialog(
-            String barcode,
-            EditText nameInput,
-            TextView statusView,
-            String[] autoBrand,
-            String[] autoSpec,
-            String[] autoSource,
-            String[] autoType,
-            boolean[] nameTouched,
-            boolean[] programmatic,
-            boolean[] dismissed) {
-        if (!networkLookupEnabled()) {
-            showInfoStatus(statusView, R.string.status_info_disabled);
-        } else {
-            showInfoStatus(statusView, R.string.status_info_loading);
-        }
-
-        ioExecutor.execute(() -> {
-            if (isFinishing() || isDestroyed()) {
-                return;
-            }
-            ProductInfo cached = dbHelper.findProductInfo(barcode);
-            runOnUiThread(() -> {
-                if (dismissed[0] || isFinishing() || isDestroyed()) {
-                    return;
-                }
-                if (cached != null && cached.hasUsableName()) {
-                    fillInfoIntoDialog(
-                            cached, nameInput, statusView,
-                            autoBrand, autoSpec, autoSource, autoType,
-                            nameTouched, programmatic, dismissed);
-                    return;
-                }
-                if (cached != null && !cached.found && isInfoFresh(cached)) {
-                    showInfoStatus(statusView, R.string.status_info_not_found);
-                    return;
-                }
-                if (!networkLookupEnabled()) {
-                    return;
-                }
-                startInfoLookup(
-                        barcode, nameInput, statusView,
-                        autoBrand, autoSpec, autoSource, autoType,
-                        nameTouched, programmatic, dismissed);
-            });
-        });
-    }
-
-    private boolean isInfoFresh(ProductInfo info) {
-        long age = System.currentTimeMillis() - info.fetchedAt;
-        long limit = info.found
-                ? 30L * 24L * 60L * 60L * 1000L
-                : 7L * 24L * 60L * 60L * 1000L;
-        return age >= 0 && age < limit;
-    }
-
-    private void startInfoLookup(
-            String barcode,
-            EditText nameInput,
-            TextView statusView,
-            String[] autoBrand,
-            String[] autoSpec,
-            String[] autoSource,
-            String[] autoType,
-            boolean[] nameTouched,
-            boolean[] programmatic,
-            boolean[] dismissed) {
-        networkExecutor.execute(() -> {
-            OpenFoodFactsClient.Result result = OpenFoodFactsClient.lookup(barcode);
-            if (result.status == OpenFoodFactsClient.Status.FOUND
-                    || result.status == OpenFoodFactsClient.Status.NOT_FOUND) {
-                if (!isFinishing() && !isDestroyed() && !ioExecutor.isShutdown()) {
-                    ioExecutor.execute(() -> dbHelper.upsertProductInfo(result.info));
-                }
-            }
-            runOnUiThread(() -> {
-                if (dismissed[0] || isFinishing() || isDestroyed()) {
-                    return;
-                }
-                switch (result.status) {
-                    case FOUND:
-                        fillInfoIntoDialog(
-                                result.info, nameInput, statusView,
-                                autoBrand, autoSpec, autoSource, autoType,
-                                nameTouched, programmatic, dismissed);
-                        break;
-                    case NOT_FOUND:
-                        showInfoStatus(statusView, R.string.status_info_not_found);
-                        break;
-                    case BUSY:
-                        showInfoStatus(statusView, R.string.status_info_busy);
-                        break;
-                    default:
-                        showInfoStatus(statusView, R.string.status_info_error);
-                        break;
-                }
-            });
-        });
-    }
-
-    private void fillInfoIntoDialog(
-            ProductInfo info,
-            EditText nameInput,
-            TextView statusView,
-            String[] autoBrand,
-            String[] autoSpec,
-            String[] autoSource,
-            String[] autoType,
-            boolean[] nameTouched,
-            boolean[] programmatic,
-            boolean[] dismissed) {
-        if (dismissed[0] || isFinishing() || isDestroyed()) {
-            return;
-        }
-        autoBrand[0] = info.brand;
-        autoSpec[0] = info.spec;
-        autoSource[0] = info.source;
-        autoType[0] = info.productType;
-        if (!nameTouched[0] && info.hasUsableName()) {
-            programmatic[0] = true;
-            nameInput.setText(info.name);
-            nameInput.setSelection(nameInput.getText().length());
-            programmatic[0] = false;
-        }
-        showInfoStatus(statusView, R.string.status_info_found);
-    }
-
-    private void showInfoStatus(TextView statusView, int stringRes) {
-        statusView.setText(stringRes);
-        statusView.setVisibility(View.VISIBLE);
     }
 
     private void showManualInputDialog() {
@@ -1039,7 +954,7 @@ public class MainActivity extends AppCompatActivity {
         popup.getMenu().add(0, MENU_EXPORT_SAVE, 2, R.string.menu_export_save);
         popup.getMenu().add(0, MENU_IMPORT, 3, R.string.menu_import);
         popup.getMenu().add(0, MENU_RESTORE, 4, R.string.menu_restore);
-        popup.getMenu().add(0, MENU_SETTINGS, 5, R.string.menu_settings);
+        popup.getMenu().add(0, MENU_ABOUT, 5, R.string.menu_about);
         popup.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case MENU_EXPORT_SHARE:
@@ -1054,8 +969,8 @@ public class MainActivity extends AppCompatActivity {
                 case MENU_RESTORE:
                     showBackups();
                     return true;
-                case MENU_SETTINGS:
-                    showSettingsDialog();
+                case MENU_ABOUT:
+                    showAboutDialog();
                     return true;
                 default:
                     return false;
@@ -1374,63 +1289,13 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private void showSettingsDialog() {
-        LinearLayout container = new LinearLayout(this);
-        container.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(24);
-        container.setPadding(padding, dp(8), padding, dp(4));
-
-        SwitchCompat networkSwitch = new SwitchCompat(this);
-        networkSwitch.setText(R.string.settings_network);
-        networkSwitch.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        networkSwitch.setChecked(networkLookupEnabled());
-        networkSwitch.setOnCheckedChangeListener((buttonView, isChecked) ->
-                preferences.edit().putBoolean(PREF_NETWORK, isChecked).apply());
-        container.addView(networkSwitch);
-
-        TextView networkHint = new TextView(this);
-        networkHint.setText(R.string.settings_network_sub);
-        networkHint.setTextColor(ContextCompat.getColor(this, R.color.text_muted));
-        networkHint.setTextSize(12);
-        networkHint.setPadding(dp(4), 0, 0, dp(12));
-        container.addView(networkHint);
-
-        TextView clearCache = new TextView(this);
-        clearCache.setText(R.string.settings_clear_cache);
-        clearCache.setTextColor(ContextCompat.getColor(this, R.color.text_primary));
-        clearCache.setTextSize(14);
-        clearCache.setGravity(android.view.Gravity.CENTER);
-        clearCache.setBackgroundResource(R.drawable.bg_chip);
-        clearCache.setPadding(dp(12), dp(10), dp(12), dp(10));
-        clearCache.setClickable(true);
-        clearCache.setFocusable(true);
-        clearCache.setOnClickListener(v -> {
-            ioExecutor.execute(() -> {
-                dbHelper.clearProductInfo();
-                runOnUiThread(() -> Toast.makeText(
-                        MainActivity.this,
-                        R.string.settings_clear_cache_done,
-                        Toast.LENGTH_SHORT).show());
-            });
-        });
-        container.addView(clearCache);
-
-        TextView about = new TextView(this);
-        about.setText(getString(R.string.settings_about)
-                + "\n\n" + getString(R.string.about_version, "1.3")
-                + "\n" + getString(R.string.about_github));
-        about.setTextColor(ContextCompat.getColor(this, R.color.text_muted));
-        about.setTextSize(12);
-        about.setLineSpacing(dp(3), 1f);
-        about.setPadding(0, dp(16), 0, 0);
-        container.addView(about);
-
-        ScrollView scrollView = new ScrollView(this);
-        scrollView.addView(container);
-
+    private void showAboutDialog() {
+        String message = getString(R.string.about_version, "1.4")
+                + "\n" + getString(R.string.about_github)
+                + "\n\n" + getString(R.string.settings_about);
         new AlertDialog.Builder(this, R.style.Theme_PriceScanner_Dialog)
-                .setTitle(R.string.settings_title)
-                .setView(scrollView)
+                .setTitle(R.string.menu_about)
+                .setMessage(message)
                 .setPositiveButton(R.string.action_close, null)
                 .show();
     }
@@ -1484,10 +1349,6 @@ public class MainActivity extends AppCompatActivity {
         return message == null || message.isEmpty() ? e.getClass().getSimpleName() : message;
     }
 
-    private int dp(int value) {
-        return (int) (value * getResources().getDisplayMetrics().density);
-    }
-
     @Override
     protected void onResume() {
         super.onResume();
@@ -1521,9 +1382,6 @@ public class MainActivity extends AppCompatActivity {
         }
         if (ioExecutor != null) {
             ioExecutor.shutdown();
-        }
-        if (networkExecutor != null) {
-            networkExecutor.shutdownNow();
         }
         if (dbHelper != null) {
             dbHelper.close();
