@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
+import android.graphics.RectF;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.Uri;
@@ -88,12 +89,16 @@ public class MainActivity extends AppCompatActivity {
     private ExecutorService ioExecutor;
     private ProductDbHelper dbHelper;
 
+    private static final int REQUIRED_STABLE_FRAMES = 2;
+
     private volatile boolean scanning;
     private boolean cameraStarting;
     private boolean torchOn;
     private int state = STATE_IDLE;
     private String currentBarcode;
     private Product currentProduct;
+    private String pendingBarcode;
+    private int pendingFrames;
 
     private ActivityResultLauncher<String> permissionLauncher;
 
@@ -291,6 +296,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         scanning = true;
+        pendingBarcode = null;
+        pendingFrames = 0;
         state = STATE_IDLE;
         showIdlePanel();
         scannerOverlay.setScanning(true);
@@ -299,6 +306,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void pauseScanning() {
         scanning = false;
+        pendingBarcode = null;
+        pendingFrames = 0;
         if (imageAnalysis != null) {
             imageAnalysis.clearAnalyzer();
         }
@@ -324,17 +333,90 @@ public class MainActivity extends AppCompatActivity {
                     if (!scanning) {
                         return;
                     }
-                    for (Barcode barcode : barcodes) {
-                        String value = barcode.getRawValue();
-                        if (value != null
-                                && isScannableBarcode(barcode, value.trim())) {
-                            onBarcodeDetected(value.trim());
-                            return;
-                        }
+                    String value = pickBarcodeInFrame(barcodes, imageProxy);
+                    if (value == null) {
+                        pendingBarcode = null;
+                        pendingFrames = 0;
+                        return;
+                    }
+                    if (value.equals(pendingBarcode)) {
+                        pendingFrames++;
+                    } else {
+                        pendingBarcode = value;
+                        pendingFrames = 1;
+                    }
+                    if (pendingFrames >= REQUIRED_STABLE_FRAMES) {
+                        pendingBarcode = null;
+                        pendingFrames = 0;
+                        onBarcodeDetected(value);
                     }
                 })
                 .addOnFailureListener(e -> Log.w(TAG, "Barcode processing failed", e))
                 .addOnCompleteListener(task -> imageProxy.close());
+    }
+
+    /**
+     * 只接受完整落在绿色取景框内的条码；框内有多个时取面积最大（离得最近、最完整）的一个。
+     */
+    private String pickBarcodeInFrame(
+            java.util.List<Barcode> barcodes, ImageProxy imageProxy) {
+        RectF frame = scannerOverlay.getFrameRect();
+        if (frame.isEmpty()) {
+            return null;
+        }
+
+        int rotation = imageProxy.getImageInfo().getRotationDegrees();
+        float imageWidth = imageProxy.getWidth();
+        float imageHeight = imageProxy.getHeight();
+        if (rotation == 90 || rotation == 270) {
+            float swap = imageWidth;
+            imageWidth = imageHeight;
+            imageHeight = swap;
+        }
+        float viewWidth = previewView.getWidth();
+        float viewHeight = previewView.getHeight();
+        if (viewWidth <= 0 || viewHeight <= 0 || imageWidth <= 0 || imageHeight <= 0) {
+            return null;
+        }
+
+        // PreviewView 默认 FILL_CENTER：等比放大铺满并居中裁切。
+        float scale = Math.max(viewWidth / imageWidth, viewHeight / imageHeight);
+        float offsetX = (viewWidth - imageWidth * scale) / 2f;
+        float offsetY = (viewHeight - imageHeight * scale) / 2f;
+
+        String bestValue = null;
+        float bestArea = 0;
+        for (Barcode barcode : barcodes) {
+            String raw = barcode.getRawValue();
+            if (raw == null) {
+                continue;
+            }
+            String value = raw.trim();
+            if (!isScannableBarcode(barcode, value)) {
+                continue;
+            }
+            android.graphics.Rect box = barcode.getBoundingBox();
+            if (box == null || box.width() <= 0 || box.height() <= 0) {
+                continue;
+            }
+            RectF mapped = new RectF(
+                    box.left * scale + offsetX,
+                    box.top * scale + offsetY,
+                    box.right * scale + offsetX,
+                    box.bottom * scale + offsetY);
+            if (mapped.left < frame.left
+                    || mapped.top < frame.top
+                    || mapped.right > frame.right
+                    || mapped.bottom > frame.bottom) {
+                continue;
+            }
+            float area = mapped.width() * mapped.height();
+            if (area > bestArea) {
+                bestArea = area;
+                bestValue = value;
+            }
+        }
+        return bestValue;
     }
 
     private void onBarcodeDetected(String barcode) {
@@ -391,10 +473,13 @@ public class MainActivity extends AppCompatActivity {
 
     private void lookupBarcode(String barcode) {
         scanning = false;
+        pendingBarcode = null;
+        pendingFrames = 0;
         if (imageAnalysis != null) {
             imageAnalysis.clearAnalyzer();
         }
         scannerOverlay.setScanning(false);
+        playSuccessTone();
 
         currentBarcode = barcode;
         currentProduct = null;
@@ -408,7 +493,6 @@ public class MainActivity extends AppCompatActivity {
                     return;
                 }
                 if (product != null) {
-                    playSuccessTone();
                     showProduct(product);
                 } else {
                     showEmpty(barcode);
@@ -432,9 +516,9 @@ public class MainActivity extends AppCompatActivity {
     private void playSuccessTone() {
         try {
             if (toneGenerator == null) {
-                toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, 80);
+                toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
             }
-            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 150);
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 200);
         } catch (RuntimeException e) {
             Log.w(TAG, "Unable to play success tone", e);
         }

@@ -137,6 +137,10 @@ public class ScannerOverlayView extends View {
         canvas.restoreToCount(saveCount);
     }
 
+    public RectF getFrameRect() {
+        return new RectF(frameRect);
+    }
+
     public void setScanning(boolean scanning) {
         if (this.scanning == scanning) {
             return;
