@@ -75,7 +75,8 @@
                         <androidx.camera.view.PreviewView
                             android:id="@+id/preview_view"
                             android:layout_width="match_parent"
-                            android:layout_height="match_parent" />
+                            android:layout_height="match_parent"
+                            android:visibility="gone" />
 
                         <com.example.pricescanner.ScannerOverlayView
                             android:id="@+id/scanner_overlay"
@@ -1112,6 +1113,7 @@
                 android:background="@drawable/bg_grabber" />
 
             <ScrollView
+                android:id="@+id/sheet_scroll"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:scrollbars="none">

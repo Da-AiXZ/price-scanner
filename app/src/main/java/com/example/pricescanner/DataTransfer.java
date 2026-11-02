@@ -47,7 +47,7 @@ public final class DataTransfer {
             JSONObject root = new JSONObject();
             root.put("schemaVersion", SCHEMA_VERSION);
             root.put("app", "PriceScanner");
-            root.put("appVersion", "1.6");
+            root.put("appVersion", "1.7");
             root.put("exportedAt", exportedAt);
             root.put("licenseNotice", LICENSE_NOTICE);
 

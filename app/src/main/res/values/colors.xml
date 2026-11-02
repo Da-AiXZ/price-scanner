@@ -19,6 +19,7 @@
     <color name="tab_inactive">#9A9AA5</color>
     <color name="sheet_mask">#52000000</color>
     <color name="scan_bg">#08080C</color>
+    <color name="scan_add_bg">#05070B</color>
 
     <!-- 兼容旧布局的别名 -->
     <color name="accent">#007AFF</color>

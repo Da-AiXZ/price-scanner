@@ -179,4 +179,8 @@
     <string name="pop_scan_add">扫描输入添加</string>
     <string name="pop_manual_add">手动输入添加</string>
     <string name="cart_item_meta">¥%1$s · %2$s</string>
+    <string name="scan_add_title">扫描条码添加</string>
+    <string name="scan_add_hint">将商品条码对准绿色框内</string>
+    <string name="scan_add_success">识别成功 · %1$s</string>
+    <string name="toast_start_scan_first">请先开始扫描</string>
 </resources>

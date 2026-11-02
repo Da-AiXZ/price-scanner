@@ -2,13 +2,13 @@ package com.example.pricescanner;
 
 import android.Manifest;
 import android.animation.ValueAnimator;
+import android.app.Activity;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.hardware.camera2.CaptureRequest;
@@ -35,6 +35,7 @@ import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.view.animation.OvershootInterpolator;
 import android.view.animation.PathInterpolator;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.BaseAdapter;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -68,6 +69,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.barcode.BarcodeScanner;
@@ -181,6 +187,7 @@ public class MainActivity extends AppCompatActivity {
     private View sheetMask;
     private FrameLayout sheetContainer;
     private LinearLayout sheetPanel;
+    private ScrollView sheetScroll;
     private LinearLayout sheetBody;
     private TextView appToast;
 
@@ -198,7 +205,6 @@ public class MainActivity extends AppCompatActivity {
     private boolean cameraStarting;
     private boolean torchOn;
     private boolean sheetOpen;
-    private boolean scanPending;
     private boolean destroyed;
     private boolean cameraPermissionRequested;
     private int currentTab = -1;
@@ -231,6 +237,7 @@ public class MainActivity extends AppCompatActivity {
     private ActivityResultLauncher<String> permissionLauncher;
     private ActivityResultLauncher<String> createDocumentLauncher;
     private ActivityResultLauncher<String[]> openDocumentLauncher;
+    private ActivityResultLauncher<Intent> scanAddLauncher;
     private File pendingExportFile;
     private String lastHandledImportUri;
 
@@ -238,9 +245,15 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        }
         setContentView(R.layout.activity_main);
 
         bindViews();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            setupWindowInsets();
+        }
 
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         cameraPermissionRequested = preferences.getBoolean(
@@ -263,7 +276,6 @@ public class MainActivity extends AppCompatActivity {
                 new ActivityResultContracts.RequestPermission(),
                 granted -> {
                     if (granted) {
-                        startCamera();
                         startScanSession();
                     } else {
                         showAppToast(getString(R.string.toast_permission_denied));
@@ -282,6 +294,29 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
 
+        scanAddLauncher = registerForActivityResult(
+                new ActivityResultContracts.StartActivityForResult(),
+                result -> {
+                    if (result.getResultCode() != Activity.RESULT_OK
+                            || result.getData() == null) {
+                        return;
+                    }
+                    String barcode = result.getData()
+                            .getStringExtra(ScanAddActivity.EXTRA_BARCODE);
+                    if (barcode == null || barcode.isEmpty()) {
+                        return;
+                    }
+                    ioExecutor.execute(() -> {
+                        Product product = dbHelper.findProduct(barcode);
+                        runOnUiThread(() -> {
+                            if (destroyed || isFinishing()) {
+                                return;
+                            }
+                            showProductSheet(barcode, product, product == null);
+                        });
+                    });
+                });
+
         setupTabs();
         setupScanPage();
         setupCartPage();
@@ -291,10 +326,31 @@ public class MainActivity extends AppCompatActivity {
 
         applyTab(TAB_SCAN, false);
         refreshCartBadge();
-        if (hasCameraPermission()) {
-            startCamera();
-        }
         handleIncomingIntent(getIntent());
+    }
+
+    private void setupWindowInsets() {
+        View rootView = findViewById(R.id.root);
+        ViewCompat.setOnApplyWindowInsetsListener(rootView, (view, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            view.setPadding(0, bars.top, 0, Math.max(bars.bottom, ime.bottom));
+            view.post(() -> {
+                if (sheetOpen) {
+                    fitSheetHeight();
+                    if (ime.bottom > 0) {
+                        view.postDelayed(this::ensureFocusedFieldVisible, 80);
+                    }
+                }
+            });
+            return insets;
+        });
+
+        WindowInsetsControllerCompat controller =
+                WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        controller.setAppearanceLightStatusBars(true);
+        controller.setAppearanceLightNavigationBars(true);
+        ViewCompat.requestApplyInsets(rootView);
     }
 
     private void bindViews() {
@@ -323,6 +379,7 @@ public class MainActivity extends AppCompatActivity {
         viewData = findViewById(R.id.view_data);
 
         previewView = findViewById(R.id.preview_view);
+        previewView.setImplementationMode(PreviewView.ImplementationMode.COMPATIBLE);
         scannerOverlay = findViewById(R.id.scanner_overlay);
         vfLabel = findViewById(R.id.vf_label);
         scanButton = findViewById(R.id.scan_button);
@@ -362,6 +419,7 @@ public class MainActivity extends AppCompatActivity {
         sheetMask = findViewById(R.id.sheet_mask);
         sheetContainer = findViewById(R.id.sheet_container);
         sheetPanel = findViewById(R.id.sheet_panel);
+        sheetScroll = findViewById(R.id.sheet_scroll);
         sheetBody = findViewById(R.id.sheet_body);
         appToast = findViewById(R.id.app_toast);
     }
@@ -501,6 +559,13 @@ public class MainActivity extends AppCompatActivity {
 
     private void applyTab(int tab, boolean animate) {
         int oldTab = currentTab;
+        if (tab != TAB_SCAN) {
+            if (scanning) {
+                stopScanSession();
+            } else {
+                stopCamera();
+            }
+        }
         View newView = tabView(tab);
         for (int i = 0; i < 4; i++) {
             tabView(i).setVisibility(i == tab ? View.VISIBLE : View.GONE);
@@ -530,21 +595,6 @@ public class MainActivity extends AppCompatActivity {
         updateTabColors();
         updateTabIndicator(animate);
         refreshTab(tab);
-
-        if (tab == TAB_SCAN) {
-            if (hasCameraPermission() && cameraProvider == null) {
-                startCamera();
-            } else if (scanning && imageAnalysis != null) {
-                imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
-            }
-        } else {
-            scanPending = false;
-            if (scanning) {
-                stopScanSession();
-            } else if (imageAnalysis != null) {
-                imageAnalysis.clearAnalyzer();
-            }
-        }
     }
 
     private View tabView(int tab) {
@@ -676,7 +726,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void requestCameraPermission() {
         if (hasCameraPermission()) {
-            startCamera();
             startScanSession();
             return;
         }
@@ -704,7 +753,17 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startCamera() {
-        if (!hasCameraPermission() || cameraProvider != null || cameraStarting) {
+        if (!hasCameraPermission() || cameraStarting) {
+            return;
+        }
+        if (camera != null && imageAnalysis != null) {
+            if (scanning) {
+                imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
+            }
+            return;
+        }
+        if (cameraProvider != null) {
+            bindCamera();
             return;
         }
         cameraStarting = true;
@@ -713,44 +772,76 @@ public class MainActivity extends AppCompatActivity {
             cameraStarting = false;
             try {
                 cameraProvider = future.get();
-
-                Preview.Builder previewBuilder = new Preview.Builder()
-                        .setTargetResolution(new Size(1920, 1080));
-                new Camera2Interop.Extender<>(previewBuilder)
-                        .setCaptureRequestOption(
-                                CaptureRequest.CONTROL_AF_MODE,
-                                CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
-                Preview preview = previewBuilder.build();
-                preview.setSurfaceProvider(previewView.getSurfaceProvider());
-
-                imageAnalysis = new ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setTargetResolution(new Size(1280, 720))
-                        .build();
-
-                cameraProvider.unbindAll();
-                camera = cameraProvider.bindToLifecycle(
-                        this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageAnalysis);
-
-                if (torchOn && camera.getCameraInfo().hasFlashUnit()) {
-                    camera.getCameraControl().enableTorch(true);
-                }
-                previewView.postDelayed(this::focusCenter, 600);
-                if (scanPending) {
-                    scanPending = false;
-                    imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
-                } else if (scanning) {
-                    imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
-                }
+                bindCamera();
             } catch (Exception e) {
-                Log.e(TAG, "Unable to start camera", e);
-                scanning = false;
-                scanPending = false;
-                resetScanUi();
-                vfLabel.setText(R.string.status_no_camera);
-                showAppToast(getString(R.string.toast_camera_error));
+                handleCameraError(e);
             }
         }, ContextCompat.getMainExecutor(this));
+    }
+
+    private void bindCamera() {
+        if (cameraProvider == null) {
+            return;
+        }
+        try {
+            Preview.Builder previewBuilder = new Preview.Builder()
+                    .setTargetResolution(new Size(1920, 1080));
+            new Camera2Interop.Extender<>(previewBuilder)
+                    .setCaptureRequestOption(
+                            CaptureRequest.CONTROL_AF_MODE,
+                            CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE);
+            Preview preview = previewBuilder.build();
+            preview.setSurfaceProvider(previewView.getSurfaceProvider());
+
+            imageAnalysis = new ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setTargetResolution(new Size(1280, 720))
+                    .build();
+
+            cameraProvider.unbindAll();
+            camera = cameraProvider.bindToLifecycle(
+                    this, CameraSelector.DEFAULT_BACK_CAMERA, preview, imageAnalysis);
+            previewView.setVisibility(View.VISIBLE);
+
+            if (torchOn && camera.getCameraInfo().hasFlashUnit()) {
+                camera.getCameraControl().enableTorch(true);
+            }
+            previewView.postDelayed(this::focusCenter, 600);
+            if (scanning) {
+                imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
+            }
+        } catch (Exception e) {
+            handleCameraError(e);
+        }
+    }
+
+    private void handleCameraError(Exception e) {
+        Log.e(TAG, "Unable to start camera", e);
+        scanning = false;
+        stopCamera();
+        resetScanUi();
+        vfLabel.setText(R.string.status_no_camera);
+        showAppToast(getString(R.string.toast_camera_error));
+    }
+
+    private void stopCamera() {
+        if (imageAnalysis != null) {
+            imageAnalysis.clearAnalyzer();
+        }
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+        }
+        camera = null;
+        imageAnalysis = null;
+        if (previewView != null) {
+            previewView.setVisibility(View.GONE);
+        }
+        if (torchOn) {
+            torchOn = false;
+            if (currentTab == TAB_SCAN) {
+                updateTopAction();
+            }
+        }
     }
 
     private void startScanSession() {
@@ -762,6 +853,7 @@ public class MainActivity extends AppCompatActivity {
         scanning = true;
         pendingBarcode = null;
         pendingFrames = 0;
+        previewView.setVisibility(View.VISIBLE);
         scannerOverlay.setMode(ScannerOverlayView.MODE_SCANNING);
         vfLabel.setText(R.string.scanning_label);
         vfLabel.setTextColor(Color.parseColor("#6EE7B7"));
@@ -769,27 +861,15 @@ public class MainActivity extends AppCompatActivity {
         scanButtonIcon.setVisibility(View.GONE);
         scanButtonSpinner.setVisibility(View.VISIBLE);
         scanButtonLabel.setText(R.string.action_scanning);
-        if (imageAnalysis == null) {
-            scanPending = true;
-            startCamera();
-            return;
-        }
-        imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
+        startCamera();
         previewView.postDelayed(this::focusCenter, 200);
-    }
-
-    private void pauseAnalyzer() {
-        if (imageAnalysis != null) {
-            imageAnalysis.clearAnalyzer();
-        }
     }
 
     private void stopScanSession() {
         scanning = false;
-        scanPending = false;
         pendingBarcode = null;
         pendingFrames = 0;
-        pauseAnalyzer();
+        stopCamera();
         resetScanUi();
     }
 
@@ -823,7 +903,12 @@ public class MainActivity extends AppCompatActivity {
                     if (!scanning) {
                         return;
                     }
-                    String value = pickBarcodeInFrame(barcodes, imageProxy);
+                    String value = BarcodePicker.pickInFrame(
+                            barcodes,
+                            imageProxy,
+                            previewView.getWidth(),
+                            previewView.getHeight(),
+                            scannerOverlay.getFrameRect());
                     if (value == null) {
                         pendingBarcode = null;
                         pendingFrames = 0;
@@ -847,75 +932,6 @@ public class MainActivity extends AppCompatActivity {
                 .addOnCompleteListener(task -> imageProxy.close());
     }
 
-    private String pickBarcodeInFrame(
-            List<Barcode> barcodes, ImageProxy imageProxy) {
-        RectF frame = scannerOverlay.getFrameRect();
-        if (frame.isEmpty()) {
-            return null;
-        }
-
-        int rotation = imageProxy.getImageInfo().getRotationDegrees();
-        float imageWidth = imageProxy.getWidth();
-        float imageHeight = imageProxy.getHeight();
-        if (rotation == 90 || rotation == 270) {
-            float swap = imageWidth;
-            imageWidth = imageHeight;
-            imageHeight = swap;
-        }
-        float viewWidth = previewView.getWidth();
-        float viewHeight = previewView.getHeight();
-        if (viewWidth <= 0 || viewHeight <= 0 || imageWidth <= 0 || imageHeight <= 0) {
-            return null;
-        }
-
-        float scale = Math.max(viewWidth / imageWidth, viewHeight / imageHeight);
-        float offsetX = (viewWidth - imageWidth * scale) / 2f;
-        float offsetY = (viewHeight - imageHeight * scale) / 2f;
-
-        float centerX = frame.centerX();
-        float centerY = frame.centerY();
-        float halfDiagonal = (float) Math.hypot(
-                frame.width() / 2f, frame.height() / 2f);
-
-        String bestValue = null;
-        float bestScore = 0;
-        for (Barcode barcode : barcodes) {
-            String raw = barcode.getRawValue();
-            if (raw == null) {
-                continue;
-            }
-            String value = raw.trim();
-            if (!isScannableBarcode(barcode, value)) {
-                continue;
-            }
-            android.graphics.Rect box = barcode.getBoundingBox();
-            if (box == null || box.width() <= 0 || box.height() <= 0) {
-                continue;
-            }
-            RectF mapped = new RectF(
-                    box.left * scale + offsetX,
-                    box.top * scale + offsetY,
-                    box.right * scale + offsetX,
-                    box.bottom * scale + offsetY);
-            if (mapped.left < frame.left
-                    || mapped.top < frame.top
-                    || mapped.right > frame.right
-                    || mapped.bottom > frame.bottom) {
-                continue;
-            }
-            float area = mapped.width() * mapped.height();
-            float distance = (float) Math.hypot(
-                    mapped.centerX() - centerX, mapped.centerY() - centerY);
-            float distanceRatio = Math.min(1f, distance / halfDiagonal);
-            float score = area * (1.5f - distanceRatio);
-            if (score > bestScore) {
-                bestScore = score;
-                bestValue = value;
-            }
-        }
-        return bestValue;
-    }
-
     private void onBarcodeDetected(String barcode) {
         if (!scanning) {
             return;
@@ -923,12 +939,12 @@ public class MainActivity extends AppCompatActivity {
         scanning = false;
         pendingBarcode = null;
         pendingFrames = 0;
-        pauseAnalyzer();
 
         playSuccessTone();
         vibrate();
         scannerOverlay.playSuccess();
         vfLabel.setText(R.string.scanning_label);
+        stopCamera();
 
         currentBarcode = barcode;
         ioExecutor.execute(() -> {
@@ -1164,7 +1180,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void toggleTorch() {
         if (camera == null) {
-            showAppToast(getString(R.string.toast_camera_error));
+            showAppToast(getString(R.string.toast_start_scan_first));
             return;
         }
         if (!camera.getCameraInfo().hasFlashUnit()) {
@@ -1224,56 +1240,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return count == 0 ? 128 : (int) (sum / count);
-    }
-
-    private boolean isScannableBarcode(Barcode barcode, String value) {
-        switch (barcode.getFormat()) {
-            case Barcode.FORMAT_EAN_13:
-                return value.length() == 13
-                        && isDigits(value)
-                        && hasValidCheckDigit(value, false);
-            case Barcode.FORMAT_EAN_8:
-                return value.length() == 8
-                        && isDigits(value)
-                        && hasValidCheckDigit(value, true);
-            case Barcode.FORMAT_UPC_A:
-                return value.length() == 12
-                        && isDigits(value)
-                        && hasValidCheckDigit(value, true);
-            case Barcode.FORMAT_UPC_E:
-                return value.length() == 8 && isDigits(value);
-            case Barcode.FORMAT_CODE_128:
-                return value.length() >= 6;
-            case Barcode.FORMAT_ITF:
-                return value.length() >= 6
-                        && value.length() <= 14
-                        && isDigits(value);
-            case Barcode.FORMAT_CODE_39:
-                return value.length() >= 6;
-            default:
-                return false;
-        }
-    }
-
-    private boolean isDigits(String value) {
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (c < '0' || c > '9') {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean hasValidCheckDigit(String code, boolean weightThreeFirst) {
-        int sum = 0;
-        for (int i = 0; i < code.length() - 1; i++) {
-            int digit = code.charAt(i) - '0';
-            boolean useThree = (i % 2 == 0) == weightThreeFirst;
-            sum += digit * (useThree ? 3 : 1);
-        }
-        int expected = (10 - (sum % 10)) % 10;
-        return expected == code.charAt(code.length() - 1) - '0';
     }
 
     private String categoryLabel(String category) {
@@ -1529,8 +1495,7 @@ public class MainActivity extends AppCompatActivity {
         popup.setElevation(dp(12));
         content.findViewById(R.id.pop_scan).setOnClickListener(v -> {
             popup.dismiss();
-            setTab(TAB_SCAN);
-            tbTitle.postDelayed(this::startScanSession, 300);
+            scanAddLauncher.launch(new Intent(this, ScanAddActivity.class));
         });
         content.findViewById(R.id.pop_manual).setOnClickListener(v -> {
             popup.dismiss();
@@ -2024,7 +1989,7 @@ public class MainActivity extends AppCompatActivity {
     private void showAboutSheet() {
         View content = showSheet(R.layout.sheet_about);
         TextView version = content.findViewById(R.id.about_version);
-        version.setText(getString(R.string.about_version, "1.6"));
+        version.setText(getString(R.string.about_version, "1.7"));
         content.findViewById(R.id.about_close).setOnClickListener(v -> closeSheet());
     }
 
@@ -2032,6 +1997,9 @@ public class MainActivity extends AppCompatActivity {
         sheetPanel.animate().cancel();
         sheetMask.animate().cancel();
         sheetBody.removeAllViews();
+        ViewGroup.LayoutParams panelParams = sheetPanel.getLayoutParams();
+        panelParams.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        sheetPanel.setLayoutParams(panelParams);
         View content = LayoutInflater.from(this)
                 .inflate(layoutRes, sheetBody, false);
         sheetBody.addView(content);
@@ -2043,15 +2011,62 @@ public class MainActivity extends AppCompatActivity {
         sheetPanel.setAlpha(0f);
         sheetContainer.setVisibility(View.VISIBLE);
         sheetContainer.post(() -> {
-            sheetPanel.setTranslationY(sheetPanel.getHeight());
-            sheetPanel.animate()
-                    .translationY(0f)
-                    .alpha(1f)
-                    .setDuration(400)
-                    .setInterpolator(EASE)
-                    .start();
+            fitSheetHeight();
+            sheetPanel.post(() -> {
+                sheetPanel.setTranslationY(sheetPanel.getHeight());
+                sheetPanel.animate()
+                        .translationY(0f)
+                        .alpha(1f)
+                        .setDuration(400)
+                        .setInterpolator(EASE)
+                        .start();
+            });
         });
         return content;
+    }
+
+    private void fitSheetHeight() {
+        if (!sheetOpen || sheetBody.getChildCount() == 0) {
+            return;
+        }
+        View content = sheetBody.getChildAt(0);
+        int width = sheetBody.getWidth();
+        if (width <= 0) {
+            width = root.getWidth() - dpInt(32);
+        }
+        if (width <= 0) {
+            return;
+        }
+        content.measure(
+                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int natural = content.getMeasuredHeight() + dpInt(49);
+        int available = root.getHeight()
+                - root.getPaddingTop()
+                - root.getPaddingBottom()
+                - dpInt(8);
+        if (available <= 0) {
+            return;
+        }
+        ViewGroup.LayoutParams params = sheetPanel.getLayoutParams();
+        params.height = natural <= available
+                ? ViewGroup.LayoutParams.WRAP_CONTENT
+                : available;
+        sheetPanel.setLayoutParams(params);
+    }
+
+    private void ensureFocusedFieldVisible() {
+        View focus = getCurrentFocus();
+        if (focus == null || sheetScroll == null || !sheetScroll.isAttachedToWindow()) {
+            return;
+        }
+        int[] focusLocation = new int[2];
+        focus.getLocationInWindow(focusLocation);
+        int[] scrollLocation = new int[2];
+        sheetScroll.getLocationInWindow(scrollLocation);
+        int offset = focusLocation[1] - scrollLocation[1];
+        int target = sheetScroll.getScrollY() + offset - dpInt(28);
+        sheetScroll.smoothScrollTo(0, Math.max(0, target));
     }
 
     private void closeSheet() {
@@ -2059,6 +2074,15 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         sheetOpen = false;
+        View focus = getCurrentFocus();
+        if (focus != null) {
+            InputMethodManager imm =
+                    (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+            }
+            focus.clearFocus();
+        }
         sheetPanel.animate()
                 .translationY(sheetPanel.getHeight())
                 .setDuration(300)
@@ -2134,28 +2158,23 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         refreshCartBadge();
-        if (currentTab == TAB_SCAN
-                && hasCameraPermission()
-                && cameraProvider == null) {
-            startCamera();
-        }
-        if (scanning && imageAnalysis != null) {
-            imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
-        }
     }
 
     @Override
     protected void onPause() {
-        pauseAnalyzer();
+        if (scanning) {
+            stopScanSession();
+        } else {
+            stopCamera();
+        }
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
         destroyed = true;
-        if (cameraProvider != null) {
-            cameraProvider.unbindAll();
-        }
+        scanning = false;
+        stopCamera();
         if (barcodeScanner != null) {
             barcodeScanner.close();
         }
