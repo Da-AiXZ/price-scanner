@@ -47,7 +47,7 @@ public final class DataTransfer {
             JSONObject root = new JSONObject();
             root.put("schemaVersion", SCHEMA_VERSION);
             root.put("app", "PriceScanner");
-            root.put("appVersion", "1.5");
+            root.put("appVersion", "1.6");
             root.put("exportedAt", exportedAt);
             root.put("licenseNotice", LICENSE_NOTICE);
 
@@ -62,6 +62,7 @@ public final class DataTransfer {
                 item.put("priceUpdatedAt", product.priceUpdatedAt);
                 item.put("nameUpdatedAt", product.nameUpdatedAt);
                 item.put("source", product.source);
+                item.put("category", product.category);
                 productArray.put(item);
             }
             root.put("products", productArray);
@@ -136,7 +137,8 @@ public final class DataTransfer {
                         priceCents,
                         priceUpdatedAt,
                         nameUpdatedAt,
-                        source));
+                        source,
+                        item.optString("category", "")));
             }
         }
 

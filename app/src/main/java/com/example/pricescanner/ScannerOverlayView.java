@@ -6,11 +6,12 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.Path;
+import android.graphics.RadialGradient;
 import android.graphics.RectF;
 import android.graphics.Shader;
 import android.util.AttributeSet;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
 import android.view.animation.LinearInterpolator;
 
 import androidx.annotation.NonNull;
@@ -19,16 +20,32 @@ import androidx.core.content.ContextCompat;
 
 public class ScannerOverlayView extends View {
 
-    private final Paint dimPaint = new Paint();
-    private final Paint framePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    public static final int MODE_IDLE = 0;
+    public static final int MODE_SCANNING = 1;
+    public static final int MODE_SUCCESS = 2;
+
     private final Paint cornerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint flashPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint focusPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF frameRect = new RectF();
-    private final Path clipPath = new Path();
 
-    private ValueAnimator animator;
+    private final int colorWhite;
+    private final int colorMint;
+    private final int colorBlue;
+
+    private int mode = MODE_IDLE;
     private float scanProgress;
-    private boolean scanning = true;
+    private ValueAnimator scanAnimator;
+
+    private float flashAlpha;
+    private ValueAnimator flashAnimator;
+
+    private float focusX;
+    private float focusY;
+    private float focusAlpha;
+    private float focusScale = 1f;
+    private ValueAnimator focusAnimator;
 
     public ScannerOverlayView(Context context) {
         this(context, null);
@@ -36,39 +53,31 @@ public class ScannerOverlayView extends View {
 
     public ScannerOverlayView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
+        colorWhite = ContextCompat.getColor(context, R.color.white);
+        colorMint = ContextCompat.getColor(context, R.color.mint);
+        colorBlue = ContextCompat.getColor(context, R.color.blue);
         init();
     }
 
     private void init() {
-        dimPaint.setColor(Color.argb(148, 0, 0, 0));
-
-        framePaint.setStyle(Paint.Style.STROKE);
-        framePaint.setStrokeWidth(dp(1));
-        framePaint.setColor(Color.argb(46, 255, 255, 255));
-
         cornerPaint.setStyle(Paint.Style.STROKE);
         cornerPaint.setStrokeWidth(dp(3.5f));
         cornerPaint.setStrokeCap(Paint.Cap.ROUND);
-        cornerPaint.setColor(ContextCompat.getColor(getContext(), R.color.accent));
 
         linePaint.setStyle(Paint.Style.FILL);
+
+        focusPaint.setStyle(Paint.Style.STROKE);
+        focusPaint.setStrokeWidth(dp(2));
+        focusPaint.setStrokeCap(Paint.Cap.ROUND);
+        focusPaint.setColor(colorMint);
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        float sideMargin = dp(44);
-        float frameWidth = Math.max(0, w - sideMargin * 2);
-        float frameHeight = Math.min(dp(200), frameWidth * 0.62f);
-        float centerY = h * 0.44f;
-        frameRect.set(
-                sideMargin,
-                centerY - frameHeight / 2f,
-                w - sideMargin,
-                centerY + frameHeight / 2f);
-
-        clipPath.reset();
-        clipPath.addRoundRect(frameRect, dp(18), dp(18), Path.Direction.CW);
+        float inset = dp(16);
+        frameRect.set(inset, inset, w - inset, h - inset);
+        startScanAnimation();
     }
 
     @Override
@@ -77,26 +86,29 @@ public class ScannerOverlayView extends View {
         if (frameRect.isEmpty()) {
             return;
         }
-
-        canvas.drawRect(0, 0, getWidth(), frameRect.top, dimPaint);
-        canvas.drawRect(0, frameRect.bottom, getWidth(), getHeight(), dimPaint);
-        canvas.drawRect(0, frameRect.top, frameRect.left, frameRect.bottom, dimPaint);
-        canvas.drawRect(frameRect.right, frameRect.top, getWidth(), frameRect.bottom, dimPaint);
-
-        canvas.drawRoundRect(frameRect, dp(18), dp(18), framePaint);
         drawCorners(canvas);
-
-        if (scanning) {
+        if (mode != MODE_SUCCESS) {
             drawScanLine(canvas);
+        }
+        if (flashAlpha > 0) {
+            drawFlash(canvas);
+        }
+        if (focusAlpha > 0) {
+            drawFocusRing(canvas);
         }
     }
 
     private void drawCorners(Canvas canvas) {
-        float len = dp(30);
-        float left = frameRect.left;
-        float top = frameRect.top;
-        float right = frameRect.right;
-        float bottom = frameRect.bottom;
+        int color = mode == MODE_IDLE ? colorWhite : colorMint;
+        cornerPaint.setColor(color);
+        cornerPaint.setAlpha(mode == MODE_IDLE ? 209 : 255);
+
+        float grow = mode == MODE_SUCCESS ? dp(2) : 0;
+        float len = dp(26) + grow;
+        float left = frameRect.left - grow / 2;
+        float top = frameRect.top - grow / 2;
+        float right = frameRect.right + grow / 2;
+        float bottom = frameRect.bottom + grow / 2;
 
         canvas.drawLine(left, top + len, left, top, cornerPaint);
         canvas.drawLine(left, top, left + len, top, cornerPaint);
@@ -109,86 +121,143 @@ public class ScannerOverlayView extends View {
     }
 
     private void drawScanLine(Canvas canvas) {
-        float y = frameRect.top + frameRect.height() * scanProgress;
-        int accent = ContextCompat.getColor(getContext(), R.color.accent);
+        boolean active = mode == MODE_SCANNING;
+        int base = active ? colorMint : colorBlue;
+        float wave = (float) Math.sin(scanProgress * Math.PI);
+        int alpha = (int) (255 * wave);
 
-        int alpha = Color.alpha(accent);
-        int transparentAccent = (alpha << 24) | (accent & 0x00FFFFFF);
-        int clearAccent = accent & 0x00FFFFFF;
+        float startX = frameRect.left + dp(4);
+        float endX = frameRect.right - dp(4);
+        float y = frameRect.top + dp(10)
+                + (frameRect.height() - dp(20)) * scanProgress;
+
+        int clear = base & 0x00FFFFFF;
+        int solid = (alpha << 24) | clear;
         linePaint.setShader(new LinearGradient(
-                frameRect.left, 0, frameRect.right, 0,
-                new int[]{clearAccent, transparentAccent, clearAccent},
+                startX, 0, endX, 0,
+                new int[]{clear, solid, clear},
                 null, Shader.TileMode.CLAMP));
+        canvas.drawRect(startX, y - dp(1.2f), endX, y + dp(1.2f), linePaint);
 
-        int saveCount = canvas.save();
-        canvas.clipPath(clipPath);
-        canvas.drawRect(
-                frameRect.left + dp(12),
-                y - dp(1.2f),
-                frameRect.right - dp(12),
-                y + dp(1.2f),
-                linePaint);
-        canvas.drawRect(
-                frameRect.left + dp(12),
-                y - dp(7),
-                frameRect.right - dp(12),
-                y + dp(7),
-                linePaint);
-        canvas.restoreToCount(saveCount);
+        linePaint.setAlpha((int) (alpha * 0.28f));
+        canvas.drawRect(startX, y - dp(6), endX, y + dp(6), linePaint);
+        linePaint.setAlpha(255);
+    }
+
+    private void drawFlash(Canvas canvas) {
+        float cx = frameRect.centerX();
+        float cy = frameRect.centerY();
+        float radius = Math.max(frameRect.width(), frameRect.height()) * 0.62f;
+        int solid = ((int) (flashAlpha * 82) << 24) | (colorMint & 0x00FFFFFF);
+        int clear = colorMint & 0x00FFFFFF;
+        flashPaint.setShader(new RadialGradient(
+                cx, cy, radius,
+                new int[]{solid, clear},
+                new float[]{0f, 1f},
+                Shader.TileMode.CLAMP));
+        canvas.drawRect(frameRect, flashPaint);
+    }
+
+    private void drawFocusRing(Canvas canvas) {
+        float size = dp(64) * focusScale;
+        RectF rect = new RectF(
+                focusX - size / 2,
+                focusY - size / 2,
+                focusX + size / 2,
+                focusY + size / 2);
+        focusPaint.setAlpha((int) (255 * focusAlpha));
+        canvas.drawRoundRect(rect, dp(4), dp(4), focusPaint);
     }
 
     public RectF getFrameRect() {
         return new RectF(frameRect);
     }
 
-    public void setScanning(boolean scanning) {
-        if (this.scanning == scanning) {
+    public void setMode(int newMode) {
+        if (mode == newMode) {
             return;
         }
-        this.scanning = scanning;
-        if (scanning) {
-            startAnimation();
+        mode = newMode;
+        if (newMode == MODE_SUCCESS) {
+            stopScanAnimation();
         } else {
-            stopAnimation();
+            startScanAnimation();
         }
         invalidate();
+    }
+
+    public void playSuccess() {
+        setMode(MODE_SUCCESS);
+        if (flashAnimator != null) {
+            flashAnimator.cancel();
+        }
+        flashAnimator = ValueAnimator.ofFloat(0.85f, 0f);
+        flashAnimator.setDuration(700);
+        flashAnimator.setInterpolator(new DecelerateInterpolator());
+        flashAnimator.addUpdateListener(animation -> {
+            flashAlpha = (float) animation.getAnimatedValue();
+            invalidate();
+        });
+        flashAnimator.start();
+    }
+
+    public void showFocusRing(float x, float y) {
+        focusX = x;
+        focusY = y;
+        if (focusAnimator != null) {
+            focusAnimator.cancel();
+        }
+        focusAnimator = ValueAnimator.ofFloat(0f, 1f);
+        focusAnimator.setDuration(620);
+        focusAnimator.setInterpolator(new DecelerateInterpolator());
+        focusAnimator.addUpdateListener(animation -> {
+            float progress = (float) animation.getAnimatedValue();
+            focusScale = 1.16f - 0.16f * progress;
+            focusAlpha = 1f - progress;
+            invalidate();
+        });
+        focusAnimator.start();
+    }
+
+    private void startScanAnimation() {
+        stopScanAnimation();
+        int duration = mode == MODE_SCANNING ? 1100 : 2800;
+        scanAnimator = ValueAnimator.ofFloat(0f, 1f);
+        scanAnimator.setDuration(duration);
+        scanAnimator.setRepeatCount(ValueAnimator.INFINITE);
+        scanAnimator.setInterpolator(new LinearInterpolator());
+        scanAnimator.addUpdateListener(animation -> {
+            scanProgress = (float) animation.getAnimatedValue();
+            invalidate();
+        });
+        scanAnimator.start();
+    }
+
+    private void stopScanAnimation() {
+        if (scanAnimator != null) {
+            scanAnimator.cancel();
+            scanAnimator = null;
+        }
     }
 
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        if (scanning) {
-            startAnimation();
-        }
+        startScanAnimation();
     }
 
     @Override
     protected void onDetachedFromWindow() {
-        stopAnimation();
+        stopScanAnimation();
+        if (flashAnimator != null) {
+            flashAnimator.cancel();
+            flashAnimator = null;
+        }
+        if (focusAnimator != null) {
+            focusAnimator.cancel();
+            focusAnimator = null;
+        }
         super.onDetachedFromWindow();
-    }
-
-    private void startAnimation() {
-        if (animator != null && animator.isRunning()) {
-            return;
-        }
-        animator = ValueAnimator.ofFloat(0f, 1f);
-        animator.setDuration(2200);
-        animator.setRepeatMode(ValueAnimator.REVERSE);
-        animator.setRepeatCount(ValueAnimator.INFINITE);
-        animator.setInterpolator(new LinearInterpolator());
-        animator.addUpdateListener(animation -> {
-            scanProgress = (float) animation.getAnimatedValue();
-            invalidate();
-        });
-        animator.start();
-    }
-
-    private void stopAnimation() {
-        if (animator != null) {
-            animator.cancel();
-            animator = null;
-        }
     }
 
     private float dp(float value) {

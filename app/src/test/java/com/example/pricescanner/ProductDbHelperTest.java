@@ -64,6 +64,7 @@ public class ProductDbHelperTest {
             assertEquals(1290, product.priceCents);
             assertEquals(1700000000000L, product.priceUpdatedAt);
             assertEquals("manual", product.source);
+            assertEquals("", product.category);
         }
     }
 
@@ -129,7 +130,7 @@ public class ProductDbHelperTest {
     public void jsonRoundTripKeepsPricesAndInfo() throws Exception {
         Product product = new Product(
                 "6901234567892", "六神花露水（195ml）", "六神", "195ml",
-                1290, 1700000000000L, 1700000000000L, "manual");
+                1290, 1700000000000L, 1700000000000L, "manual", "日化");
         ProductInfo info = new ProductInfo(
                 "6901234567892", "六神花露水（195ml）", "六神", "195ml",
                 "beauty", "openfoodfacts", 1700000000000L, true, false);
@@ -142,6 +143,7 @@ public class ProductDbHelperTest {
         assertEquals(1, data.products.size());
         assertEquals(1, data.productInfo.size());
         assertEquals(1290, data.products.get(0).priceCents);
+        assertEquals("日化", data.products.get(0).category);
         assertTrue(data.productInfo.get(0).hasUsableName());
     }
 
@@ -193,23 +195,44 @@ public class ProductDbHelperTest {
         Product product = new Product(
                 "6901234567892", "六神花露水", "六神", "195ml",
                 1290, 1000L, 1000L, "manual");
-        assertTrue(ProductsActivity.matches(product, ""));
-        assertTrue(ProductsActivity.matches(product, "花露水"));
-        assertTrue(ProductsActivity.matches(product, "690123"));
-        assertTrue(ProductsActivity.matches(product, "六神"));
-        assertTrue(ProductsActivity.matches(product, "195"));
-        assertFalse(ProductsActivity.matches(product, "可乐"));
+        assertTrue(product.matches(""));
+        assertTrue(product.matches("花露水"));
+        assertTrue(product.matches("690123"));
+        assertTrue(product.matches("六神"));
+        assertTrue(product.matches("195"));
+        assertFalse(product.matches("可乐"));
     }
 
     @Test
-    public void inflatesMainAndCartLayouts() {
+    public void savesCategoryAndCheckoutStats() {
+        deleteDatabase();
+        try (ProductDbHelper helper = new ProductDbHelper(context())) {
+            Product product = helper.saveProduct(
+                    "6901234567892", "可乐", "", "", 350, "manual", "饮料");
+            assertEquals("饮料", product.category);
+            Product saved = helper.findProduct("6901234567892");
+            assertNotNull(saved);
+            assertEquals("饮料", saved.category);
+
+            assertEquals(0, helper.getCheckoutStats().count);
+            helper.recordCheckout(700, 2);
+            helper.recordCheckout(350, 1);
+            assertEquals(2, helper.getCheckoutStats().count);
+            assertEquals(1050, helper.getCheckoutStats().totalCents);
+        }
+    }
+
+    @Test
+    public void inflatesMainAndSheetLayouts() {
         Context themed = new ContextThemeWrapper(context(), R.style.Theme_PriceScanner);
         LayoutInflater inflater = LayoutInflater.from(themed);
         assertNotNull(inflater.inflate(R.layout.activity_main, null));
-        assertNotNull(inflater.inflate(R.layout.activity_cart, null));
         assertNotNull(inflater.inflate(R.layout.item_cart, null));
-        assertNotNull(inflater.inflate(R.layout.activity_products, null));
         assertNotNull(inflater.inflate(R.layout.item_product, null));
-        assertNotNull(inflater.inflate(R.layout.dialog_product, null));
+        assertNotNull(inflater.inflate(R.layout.sheet_product, null));
+        assertNotNull(inflater.inflate(R.layout.sheet_export, null));
+        assertNotNull(inflater.inflate(R.layout.sheet_backups, null));
+        assertNotNull(inflater.inflate(R.layout.sheet_about, null));
+        assertNotNull(inflater.inflate(R.layout.menu_popup, null));
     }
 }

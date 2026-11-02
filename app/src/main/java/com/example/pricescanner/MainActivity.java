@@ -1,6 +1,7 @@
 package com.example.pricescanner;
 
 import android.Manifest;
+import android.animation.ValueAnimator;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -8,26 +9,43 @@ import android.content.pm.PackageManager;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.RectF;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
 import android.hardware.camera2.CaptureRequest;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.util.Size;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
-import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.widget.Button;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.Interpolator;
+import android.view.animation.OvershootInterpolator;
+import android.view.animation.PathInterpolator;
+import android.widget.BaseAdapter;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
-import android.widget.PopupMenu;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ListView;
+import android.widget.PopupWindow;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
@@ -46,15 +64,10 @@ import androidx.camera.core.ImageProxy;
 import androidx.camera.core.MeteringPoint;
 import androidx.camera.core.MeteringPointFactory;
 import androidx.camera.core.Preview;
-import androidx.camera.core.ZoomState;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.barcode.BarcodeScanner;
@@ -85,42 +98,91 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "PriceScanner";
     private static final String PREFS_NAME = "settings";
-    private static final String PREF_CHECKOUT = "checkout_mode";
+    private static final String PREF_CAMERA_REQUESTED = "camera_requested";
 
-    private static final int MENU_EXPORT_SHARE = 1;
-    private static final int MENU_EXPORT_SAVE = 2;
-    private static final int MENU_IMPORT = 3;
-    private static final int MENU_RESTORE = 4;
-    private static final int MENU_ABOUT = 5;
-    private static final int MENU_PRODUCTS = 6;
-
-    private static final int STATE_IDLE = 0;
-    private static final int STATE_LOOKUP = 1;
-    private static final int STATE_PRODUCT = 2;
-    private static final int STATE_EMPTY = 3;
-    private static final int STATE_PERMISSION = 4;
+    private static final int TAB_SCAN = 0;
+    private static final int TAB_CART = 1;
+    private static final int TAB_LIB = 2;
+    private static final int TAB_DATA = 3;
 
     private static final int REQUIRED_STABLE_FRAMES = 1;
-    private static final int REQUIRED_EMPTY_FRAMES = 3;
+
+    private static final Interpolator EASE =
+            new PathInterpolator(0.22f, 1f, 0.36f, 1f);
+
+    private static final int[] CAT_DRINK = {0xFFE0EFFF, 0xFF1D64D8};
+    private static final int[] CAT_DAIRY = {0xFFE2F4FF, 0xFF0B6FA4};
+    private static final int[] CAT_SNACK = {0xFFFFE8E6, 0xFFC0392B};
+    private static final int[] CAT_INSTANT = {0xFFFFF2D9, 0xFFA96A0A};
+    private static final int[] CAT_DAILY = {0xFFECE7FF, 0xFF5B3EC8};
+    private static final int[] CAT_DEFAULT = {0xFFF1F1F4, 0xFF4B4B55};
+
+    private FrameLayout root;
+    private TextView tbTitle;
+    private ImageButton tbAction;
+    private FrameLayout tabbar;
+    private View tabIndicator;
+    private LinearLayout tabScan;
+    private LinearLayout tabCart;
+    private LinearLayout tabLib;
+    private LinearLayout tabData;
+    private ImageView tabIconScan;
+    private ImageView tabIconCart;
+    private ImageView tabIconLib;
+    private ImageView tabIconData;
+    private TextView tabLabelScan;
+    private TextView tabLabelCart;
+    private TextView tabLabelLib;
+    private TextView tabLabelData;
+    private TextView tabBadgeCart;
+
+    private ScrollView viewScan;
+    private View viewCart;
+    private View viewLib;
+    private ScrollView viewData;
 
     private PreviewView previewView;
     private ScannerOverlayView scannerOverlay;
-    private ImageButton btnTorch;
-    private ImageButton btnManual;
-    private ImageButton btnMore;
-    private ImageButton btnCart;
-    private TextView cartBadge;
-    private TextView idleTitle;
-    private TextView idleSubtitle;
-    private TextView productName;
-    private TextView productBarcode;
-    private TextView productPrice;
-    private TextView emptyBarcode;
-    private TextView btnCheckoutMode;
-    private View panelIdle;
-    private View panelProduct;
-    private View panelEmpty;
-    private View panelPermission;
+    private TextView vfLabel;
+    private LinearLayout scanButton;
+    private ImageView scanButtonIcon;
+    private ProgressBar scanButtonSpinner;
+    private TextView scanButtonLabel;
+
+    private LinearLayout resultCard;
+    private TextView resultThumb;
+    private TextView resultName;
+    private TextView resultCategory;
+    private FrameLayout resultCheckWrap;
+    private TextView resultCurrency;
+    private TextView resultPrice;
+    private TextView resultBarcode;
+    private TextView resultPrimary;
+    private TextView resultSecondary;
+
+    private ListView cartList;
+    private View cartEmpty;
+    private TextView cartCountText;
+    private TextView cartTotalValue;
+    private TextView checkoutBtn;
+    private TextView cartClear;
+
+    private EditText libSearch;
+    private ListView libList;
+    private View libEmpty;
+    private TextView libEmptyTitle;
+    private TextView libEmptySub;
+
+    private TextView statLib;
+    private TextView statCart;
+    private TextView statCheckouts;
+    private TextView statRevenue;
+
+    private View sheetMask;
+    private FrameLayout sheetContainer;
+    private LinearLayout sheetPanel;
+    private LinearLayout sheetBody;
+    private TextView appToast;
 
     private BarcodeScanner barcodeScanner;
     private ProcessCameraProvider cameraProvider;
@@ -135,23 +197,36 @@ public class MainActivity extends AppCompatActivity {
     private volatile boolean scanning;
     private boolean cameraStarting;
     private boolean torchOn;
-    private boolean checkoutMode;
-    private int state = STATE_IDLE;
-    private String currentBarcode;
-    private Product currentProduct;
+    private boolean sheetOpen;
+    private boolean scanPending;
+    private boolean destroyed;
+    private boolean cameraPermissionRequested;
+    private int currentTab = -1;
+
     private String pendingBarcode;
     private int pendingFrames;
-    private String checkoutWaitBarcode;
-    private int checkoutWaitEmptyFrames;
-    private long checkoutWaitStartedAt;
-    private float zoomRatio = 1f;
-    private float zoomAtScaleStart = 1f;
-    private boolean multiTouch;
-    private float touchDownX;
-    private float touchDownY;
-    private ScaleGestureDetector scaleDetector;
+    private String currentBarcode;
+    private Product resultProduct;
+
+    private float focusDownX;
+    private float focusDownY;
     private int darkFrames;
     private long lastLowLightHintAt;
+
+    private long lastCartQuantity;
+    private long lastCartTotalCents;
+    private int cartDisplayedCents;
+
+    private final List<Product> allProducts = new ArrayList<>();
+    private String libraryQuery = "";
+    private CartAdapter cartAdapter;
+    private ProductAdapter productAdapter;
+
+    private ValueAnimator priceAnimator;
+    private ValueAnimator resultHeightAnimator;
+    private ValueAnimator cartTotalAnimator;
+
+    private Runnable toastHideRunnable;
 
     private ActivityResultLauncher<String> permissionLauncher;
     private ActivityResultLauncher<String> createDocumentLauncher;
@@ -162,16 +237,14 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
         setContentView(R.layout.activity_main);
+
         bindViews();
-        applyWindowInsets();
 
         preferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        checkoutMode = preferences.getBoolean(PREF_CHECKOUT, false);
-
+        cameraPermissionRequested = preferences.getBoolean(
+                PREF_CAMERA_REQUESTED, false);
         cameraExecutor = Executors.newSingleThreadExecutor();
         ioExecutor = Executors.newSingleThreadExecutor();
         dbHelper = new ProductDbHelper(this);
@@ -191,8 +264,9 @@ public class MainActivity extends AppCompatActivity {
                 granted -> {
                     if (granted) {
                         startCamera();
+                        startScanSession();
                     } else {
-                        showPermissionPanel();
+                        showAppToast(getString(R.string.toast_permission_denied));
                     }
                 });
 
@@ -208,145 +282,391 @@ public class MainActivity extends AppCompatActivity {
                     }
                 });
 
-        setupClickListeners();
+        setupTabs();
+        setupScanPage();
+        setupCartPage();
+        setupLibraryPage();
+        setupDataPage();
         setupBackNavigation();
-        scannerOverlay.setScanning(false);
-        updateCheckoutModeUi();
+
+        applyTab(TAB_SCAN, false);
         refreshCartBadge();
-
         if (hasCameraPermission()) {
-            showIdlePanel();
             startCamera();
-        } else {
-            state = STATE_PERMISSION;
-            showPermissionPanel();
-            permissionLauncher.launch(Manifest.permission.CAMERA);
         }
-
         handleIncomingIntent(getIntent());
     }
 
     private void bindViews() {
+        root = findViewById(R.id.root);
+        tbTitle = findViewById(R.id.tb_title);
+        tbAction = findViewById(R.id.tb_action);
+        tabbar = findViewById(R.id.tabbar);
+        tabIndicator = findViewById(R.id.tab_indicator);
+        tabScan = findViewById(R.id.tab_scan);
+        tabCart = findViewById(R.id.tab_cart);
+        tabLib = findViewById(R.id.tab_lib);
+        tabData = findViewById(R.id.tab_data);
+        tabIconScan = findViewById(R.id.tab_icon_scan);
+        tabIconCart = findViewById(R.id.tab_icon_cart);
+        tabIconLib = findViewById(R.id.tab_icon_lib);
+        tabIconData = findViewById(R.id.tab_icon_data);
+        tabLabelScan = findViewById(R.id.tab_label_scan);
+        tabLabelCart = findViewById(R.id.tab_label_cart);
+        tabLabelLib = findViewById(R.id.tab_label_lib);
+        tabLabelData = findViewById(R.id.tab_label_data);
+        tabBadgeCart = findViewById(R.id.tab_badge_cart);
+
+        viewScan = findViewById(R.id.view_scan);
+        viewCart = findViewById(R.id.view_cart);
+        viewLib = findViewById(R.id.view_lib);
+        viewData = findViewById(R.id.view_data);
+
         previewView = findViewById(R.id.preview_view);
         scannerOverlay = findViewById(R.id.scanner_overlay);
-        btnTorch = findViewById(R.id.btn_torch);
-        btnManual = findViewById(R.id.btn_manual);
-        btnMore = findViewById(R.id.btn_more);
-        btnCart = findViewById(R.id.btn_cart);
-        cartBadge = findViewById(R.id.cart_badge);
-        idleTitle = findViewById(R.id.idle_title);
-        idleSubtitle = findViewById(R.id.idle_subtitle);
-        productName = findViewById(R.id.product_name);
-        productBarcode = findViewById(R.id.product_barcode);
-        productPrice = findViewById(R.id.product_price);
-        emptyBarcode = findViewById(R.id.empty_barcode);
-        btnCheckoutMode = findViewById(R.id.btn_checkout_mode);
-        panelIdle = findViewById(R.id.panel_idle);
-        panelProduct = findViewById(R.id.panel_product);
-        panelEmpty = findViewById(R.id.panel_empty);
-        panelPermission = findViewById(R.id.panel_permission);
+        vfLabel = findViewById(R.id.vf_label);
+        scanButton = findViewById(R.id.scan_button);
+        scanButtonIcon = findViewById(R.id.scan_button_icon);
+        scanButtonSpinner = findViewById(R.id.scan_button_spinner);
+        scanButtonLabel = findViewById(R.id.scan_button_label);
+
+        resultCard = findViewById(R.id.result_card);
+        resultThumb = findViewById(R.id.result_thumb);
+        resultName = findViewById(R.id.result_name);
+        resultCategory = findViewById(R.id.result_category);
+        resultCheckWrap = findViewById(R.id.result_check_wrap);
+        resultCurrency = findViewById(R.id.result_currency);
+        resultPrice = findViewById(R.id.result_price);
+        resultBarcode = findViewById(R.id.result_barcode);
+        resultPrimary = findViewById(R.id.result_primary);
+        resultSecondary = findViewById(R.id.result_secondary);
+
+        cartList = findViewById(R.id.cart_list);
+        cartEmpty = findViewById(R.id.cart_empty);
+        cartCountText = findViewById(R.id.cart_count_text);
+        cartTotalValue = findViewById(R.id.cart_total_value);
+        checkoutBtn = findViewById(R.id.checkout_btn);
+        cartClear = findViewById(R.id.cart_clear);
+
+        libSearch = findViewById(R.id.lib_search);
+        libList = findViewById(R.id.lib_list);
+        libEmpty = findViewById(R.id.lib_empty);
+        libEmptyTitle = findViewById(R.id.lib_empty_title);
+        libEmptySub = findViewById(R.id.lib_empty_sub);
+
+        statLib = findViewById(R.id.stat_lib);
+        statCart = findViewById(R.id.stat_cart);
+        statCheckouts = findViewById(R.id.stat_checkouts);
+        statRevenue = findViewById(R.id.stat_revenue);
+
+        sheetMask = findViewById(R.id.sheet_mask);
+        sheetContainer = findViewById(R.id.sheet_container);
+        sheetPanel = findViewById(R.id.sheet_panel);
+        sheetBody = findViewById(R.id.sheet_body);
+        appToast = findViewById(R.id.app_toast);
     }
 
-    private void applyWindowInsets() {
-        View root = findViewById(R.id.root);
-        View topBar = findViewById(R.id.top_bar);
-        View bottomCard = findViewById(R.id.bottom_card);
-        int topPadding = topBar.getPaddingTop();
-        int margin = (int) (16 * getResources().getDisplayMetrics().density);
+    private void setupTabs() {
+        tabScan.setOnClickListener(v -> setTab(TAB_SCAN));
+        tabCart.setOnClickListener(v -> setTab(TAB_CART));
+        tabLib.setOnClickListener(v -> setTab(TAB_LIB));
+        tabData.setOnClickListener(v -> setTab(TAB_DATA));
+        applyPressScale(tabScan, 0.92f);
+        applyPressScale(tabCart, 0.92f);
+        applyPressScale(tabLib, 0.92f);
+        applyPressScale(tabData, 0.92f);
+        tabbar.post(() -> updateTabIndicator(false));
+    }
 
-        ViewCompat.setOnApplyWindowInsetsListener(root, (view, windowInsets) -> {
-            Insets bars = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars());
-            topBar.setPaddingRelative(
-                    topBar.getPaddingStart(),
-                    topPadding + bars.top,
-                    topBar.getPaddingEnd(),
-                    topBar.getPaddingBottom());
-
-            ViewGroup.MarginLayoutParams params =
-                    (ViewGroup.MarginLayoutParams) bottomCard.getLayoutParams();
-            params.leftMargin = margin + bars.left;
-            params.rightMargin = margin + bars.right;
-            params.bottomMargin = margin + bars.bottom;
-            bottomCard.setLayoutParams(params);
-            return windowInsets;
+    private void applyPressScale(View view, float pressedScale) {
+        view.setOnTouchListener((v, event) -> {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                v.animate().scaleX(pressedScale).scaleY(pressedScale)
+                        .setDuration(120).setInterpolator(EASE).start();
+            } else if (action == MotionEvent.ACTION_UP
+                    || action == MotionEvent.ACTION_CANCEL) {
+                v.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(180)
+                        .setInterpolator(new OvershootInterpolator(1.3f))
+                        .start();
+            }
+            return false;
         });
     }
 
-    private void setupClickListeners() {
-        btnTorch.setOnClickListener(v -> toggleTorch());
-        btnManual.setOnClickListener(v -> showManualInputDialog());
-        btnMore.setOnClickListener(this::showOverflowMenu);
-        btnCart.setOnClickListener(v -> startActivity(new Intent(this, CartActivity.class)));
-        btnCheckoutMode.setOnClickListener(v -> toggleCheckoutMode());
-        scaleDetector = new ScaleGestureDetector(this,
-                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                    @Override
-                    public boolean onScaleBegin(ScaleGestureDetector detector) {
-                        zoomAtScaleStart = zoomRatio;
-                        return true;
-                    }
-
-                    @Override
-                    public boolean onScale(ScaleGestureDetector detector) {
-                        applyZoom(zoomAtScaleStart * detector.getScaleFactor());
-                        return true;
-                    }
-                });
-
+    private void setupScanPage() {
+        scanButton.setOnClickListener(v -> startScanSession());
+        resultSecondary.setOnClickListener(v -> startScanSession());
+        applyPressScale(scanButton, 0.97f);
+        applyPressScale(resultPrimary, 0.96f);
+        applyPressScale(resultSecondary, 0.96f);
         previewView.setOnTouchListener((v, event) -> {
-            scaleDetector.onTouchEvent(event);
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    touchDownX = event.getX();
-                    touchDownY = event.getY();
-                    multiTouch = false;
-                    break;
-                case MotionEvent.ACTION_POINTER_DOWN:
-                    multiTouch = true;
-                    break;
-                case MotionEvent.ACTION_UP:
-                    float dx = event.getX() - touchDownX;
-                    float dy = event.getY() - touchDownY;
-                    float slop = 24 * getResources().getDisplayMetrics().density;
-                    if (!multiTouch && dx * dx + dy * dy < slop * slop) {
-                        focusAt(event.getX(), event.getY(), true);
-                        v.performClick();
-                    }
-                    multiTouch = false;
-                    break;
-                default:
-                    break;
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                focusDownX = event.getX();
+                focusDownY = event.getY();
+            } else if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+                float dx = event.getX() - focusDownX;
+                float dy = event.getY() - focusDownY;
+                float slop = dp(24);
+                if (event.getPointerCount() == 1 && dx * dx + dy * dy < slop * slop) {
+                    focusAt(event.getX(), event.getY(), true);
+                    scannerOverlay.showFocusRing(event.getX(), event.getY());
+                    v.performClick();
+                }
             }
             return true;
         });
+        resultName.setOnClickListener(v -> {
+            if (resultProduct != null) {
+                showProductSheet(resultProduct.barcode, resultProduct, false);
+            }
+        });
+        resultThumb.setOnClickListener(v -> {
+            if (resultProduct != null) {
+                showProductSheet(resultProduct.barcode, resultProduct, false);
+            }
+        });
+    }
 
-        findViewById(R.id.btn_rescan).setOnClickListener(v -> startScanning());
-        findViewById(R.id.btn_rescan_empty).setOnClickListener(v -> startScanning());
-        findViewById(R.id.btn_add_cart).setOnClickListener(v -> addCurrentProductToCart());
-        findViewById(R.id.btn_edit).setOnClickListener(v -> {
-            if (currentProduct != null) {
-                showProductDialog(currentProduct);
+    private void setupCartPage() {
+        cartAdapter = new CartAdapter();
+        cartList.setAdapter(cartAdapter);
+        cartClear.setOnClickListener(v -> clearCartWithAnimation());
+        checkoutBtn.setOnClickListener(v -> checkout());
+        checkoutBtn.setClickable(true);
+        checkoutBtn.setAlpha(0.4f);
+        applyPressScale(checkoutBtn, 0.96f);
+
+        View.OnClickListener goScan = v -> setTab(TAB_SCAN);
+        View emptyScan = findViewById(R.id.cart_empty_scan);
+        emptyScan.setOnClickListener(goScan);
+    }
+
+    private void setupLibraryPage() {
+        productAdapter = new ProductAdapter();
+        libList.setAdapter(productAdapter);
+        libList.setOnItemClickListener((parent, view, position, id) ->
+                showProductSheet(
+                        productAdapter.getItem(position).barcode,
+                        productAdapter.getItem(position),
+                        false));
+        libSearch.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                libraryQuery = s.toString().trim();
+                applyLibraryFilter();
             }
         });
-        findViewById(R.id.btn_add).setOnClickListener(v -> {
-            if (currentBarcode != null) {
-                showProductDialog(null);
-            }
-        });
-        findViewById(R.id.btn_permission).setOnClickListener(v -> requestCameraPermission());
+    }
+
+    private void setupDataPage() {
+        findViewById(R.id.action_export).setOnClickListener(v -> showExportSheet());
+        findViewById(R.id.action_import).setOnClickListener(v -> openImportPicker());
+        findViewById(R.id.action_restore).setOnClickListener(v -> showBackupsSheet());
+        findViewById(R.id.action_about).setOnClickListener(v -> showAboutSheet());
+        sheetMask.setOnClickListener(v -> closeSheet());
     }
 
     private void setupBackNavigation() {
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                if (state == STATE_PRODUCT || state == STATE_EMPTY) {
-                    startScanning();
+                if (sheetOpen) {
+                    closeSheet();
+                } else if (currentTab != TAB_SCAN) {
+                    setTab(TAB_SCAN);
                 } else {
                     finish();
                 }
             }
         });
+    }
+
+    private void setTab(int tab) {
+        if (tab == currentTab) {
+            refreshTab(tab);
+            return;
+        }
+        applyTab(tab, true);
+    }
+
+    private void applyTab(int tab, boolean animate) {
+        int oldTab = currentTab;
+        View newView = tabView(tab);
+        for (int i = 0; i < 4; i++) {
+            tabView(i).setVisibility(i == tab ? View.VISIBLE : View.GONE);
+        }
+
+        if (animate && oldTab >= 0 && oldTab != tab) {
+            newView.setAlpha(0f);
+            newView.setTranslationX((tab > oldTab ? 1 : -1) * dp(30));
+            newView.animate()
+                    .alpha(1f)
+                    .translationX(0f)
+                    .setDuration(320)
+                    .setInterpolator(EASE)
+                    .start();
+        } else {
+            newView.setAlpha(1f);
+            newView.setTranslationX(0f);
+        }
+
+        currentTab = tab;
+        CharSequence title = getString(titleForTab(tab));
+        if (!tbTitle.getText().toString().contentEquals(title)) {
+            tbTitle.setText(title);
+            animateTitle();
+        }
+        updateTopAction();
+        updateTabColors();
+        updateTabIndicator(animate);
+        refreshTab(tab);
+
+        if (tab == TAB_SCAN) {
+            if (hasCameraPermission() && cameraProvider == null) {
+                startCamera();
+            } else if (scanning && imageAnalysis != null) {
+                imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
+            }
+        } else {
+            scanPending = false;
+            if (scanning) {
+                stopScanSession();
+            } else if (imageAnalysis != null) {
+                imageAnalysis.clearAnalyzer();
+            }
+        }
+    }
+
+    private View tabView(int tab) {
+        switch (tab) {
+            case TAB_CART:
+                return viewCart;
+            case TAB_LIB:
+                return viewLib;
+            case TAB_DATA:
+                return viewData;
+            default:
+                return viewScan;
+        }
+    }
+
+    private int titleForTab(int tab) {
+        switch (tab) {
+            case TAB_CART:
+                return R.string.title_cart_tab;
+            case TAB_LIB:
+                return R.string.title_products;
+            case TAB_DATA:
+                return R.string.title_data;
+            default:
+                return R.string.title_scan;
+        }
+    }
+
+    private void animateTitle() {
+        tbTitle.animate().cancel();
+        tbTitle.setAlpha(0.3f);
+        tbTitle.setTranslationY(dp(5));
+        tbTitle.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(260)
+                .setInterpolator(EASE)
+                .start();
+    }
+
+    private void refreshTab(int tab) {
+        switch (tab) {
+            case TAB_CART:
+                loadCart();
+                break;
+            case TAB_LIB:
+                loadLibrary();
+                break;
+            case TAB_DATA:
+                loadStats();
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void updateTopAction() {
+        switch (currentTab) {
+            case TAB_SCAN:
+                tbAction.setVisibility(View.VISIBLE);
+                tbAction.setImageResource(R.drawable.ic_bolt);
+                tbAction.setImageTintList(ColorStateList.valueOf(ContextCompat.getColor(
+                        this, torchOn ? R.color.blue : R.color.ink2)));
+                tbAction.setContentDescription(getString(R.string.hint_torch));
+                tbAction.setOnClickListener(v -> toggleTorch());
+                break;
+            case TAB_CART:
+                tbAction.setVisibility(View.VISIBLE);
+                tbAction.setImageResource(R.drawable.ic_trash);
+                tbAction.setImageTintList(ColorStateList.valueOf(
+                        ContextCompat.getColor(this, R.color.ink2)));
+                tbAction.setContentDescription(getString(R.string.cart_clear));
+                tbAction.setOnClickListener(v -> clearCartWithAnimation());
+                break;
+            case TAB_LIB:
+                tbAction.setVisibility(View.VISIBLE);
+                tbAction.setImageResource(R.drawable.ic_plus);
+                tbAction.setImageTintList(ColorStateList.valueOf(
+                        ContextCompat.getColor(this, R.color.ink2)));
+                tbAction.setContentDescription(getString(R.string.sheet_new_product));
+                tbAction.setOnClickListener(v -> showPopupMenu());
+                break;
+            default:
+                tbAction.setVisibility(View.GONE);
+                tbAction.setOnClickListener(null);
+                break;
+        }
+    }
+
+    private void updateTabColors() {
+        int active = ContextCompat.getColor(this, R.color.blue);
+        int inactive = ContextCompat.getColor(this, R.color.tab_inactive);
+        ImageView[] icons = {tabIconScan, tabIconCart, tabIconLib, tabIconData};
+        TextView[] labels = {tabLabelScan, tabLabelCart, tabLabelLib, tabLabelData};
+        for (int i = 0; i < 4; i++) {
+            int color = i == currentTab ? active : inactive;
+            icons[i].setImageTintList(ColorStateList.valueOf(color));
+            labels[i].setTextColor(color);
+        }
+    }
+
+    private void updateTabIndicator(boolean animate) {
+        int width = tabbar.getWidth();
+        if (width <= 0) {
+            return;
+        }
+        int itemWidth = (width - dpInt(16)) / 4;
+        ViewGroup.LayoutParams params = tabIndicator.getLayoutParams();
+        if (params.width != itemWidth) {
+            params.width = itemWidth;
+            tabIndicator.setLayoutParams(params);
+        }
+        float target = Math.max(0, currentTab) * itemWidth;
+        if (animate) {
+            tabIndicator.animate()
+                    .translationX(target)
+                    .setDuration(460)
+                    .setInterpolator(new OvershootInterpolator(0.9f))
+                    .start();
+        } else {
+            tabIndicator.setTranslationX(target);
+        }
     }
 
     private boolean hasCameraPermission() {
@@ -357,9 +677,15 @@ public class MainActivity extends AppCompatActivity {
     private void requestCameraPermission() {
         if (hasCameraPermission()) {
             startCamera();
+            startScanSession();
             return;
         }
-        if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+        if (!cameraPermissionRequested
+                || shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+            cameraPermissionRequested = true;
+            preferences.edit()
+                    .putBoolean(PREF_CAMERA_REQUESTED, true)
+                    .apply();
             permissionLauncher.launch(Manifest.permission.CAMERA);
         } else {
             openAppSettings();
@@ -373,7 +699,7 @@ public class MainActivity extends AppCompatActivity {
         try {
             startActivity(intent);
         } catch (Exception e) {
-            Toast.makeText(this, R.string.toast_permission_denied, Toast.LENGTH_SHORT).show();
+            showAppToast(getString(R.string.toast_permission_denied));
         }
     }
 
@@ -409,54 +735,73 @@ public class MainActivity extends AppCompatActivity {
                 if (torchOn && camera.getCameraInfo().hasFlashUnit()) {
                     camera.getCameraControl().enableTorch(true);
                 }
-                applyZoom(zoomRatio);
-
                 previewView.postDelayed(this::focusCenter, 600);
-
-                if (state == STATE_IDLE || state == STATE_PERMISSION) {
-                    startScanning();
+                if (scanPending) {
+                    scanPending = false;
+                    imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
+                } else if (scanning) {
+                    imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Unable to start camera", e);
-                Toast.makeText(
-                        MainActivity.this, R.string.toast_camera_error, Toast.LENGTH_SHORT).show();
+                scanning = false;
+                scanPending = false;
+                resetScanUi();
+                vfLabel.setText(R.string.status_no_camera);
+                showAppToast(getString(R.string.toast_camera_error));
             }
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private void startScanning() {
+    private void startScanSession() {
         if (!hasCameraPermission()) {
-            showPermissionPanel();
+            requestCameraPermission();
             return;
         }
-        if (imageAnalysis == null) {
-            startCamera();
-            return;
-        }
+        hideResultCard();
         scanning = true;
         pendingBarcode = null;
         pendingFrames = 0;
-        checkoutWaitBarcode = null;
-        checkoutWaitEmptyFrames = 0;
-        checkoutWaitStartedAt = 0;
-        state = STATE_IDLE;
-        showIdlePanel();
-        scannerOverlay.setScanning(true);
+        scannerOverlay.setMode(ScannerOverlayView.MODE_SCANNING);
+        vfLabel.setText(R.string.scanning_label);
+        vfLabel.setTextColor(Color.parseColor("#6EE7B7"));
+        scanButton.setClickable(false);
+        scanButtonIcon.setVisibility(View.GONE);
+        scanButtonSpinner.setVisibility(View.VISIBLE);
+        scanButtonLabel.setText(R.string.action_scanning);
+        if (imageAnalysis == null) {
+            scanPending = true;
+            startCamera();
+            return;
+        }
         imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
-        previewView.postDelayed(this::focusCenter, 300);
+        previewView.postDelayed(this::focusCenter, 200);
     }
 
-    private void pauseScanning() {
-        scanning = false;
-        pendingBarcode = null;
-        pendingFrames = 0;
-        checkoutWaitBarcode = null;
-        checkoutWaitEmptyFrames = 0;
-        checkoutWaitStartedAt = 0;
+    private void pauseAnalyzer() {
         if (imageAnalysis != null) {
             imageAnalysis.clearAnalyzer();
         }
-        scannerOverlay.setScanning(false);
+    }
+
+    private void stopScanSession() {
+        scanning = false;
+        scanPending = false;
+        pendingBarcode = null;
+        pendingFrames = 0;
+        pauseAnalyzer();
+        resetScanUi();
+    }
+
+    private void resetScanUi() {
+        scannerOverlay.setMode(ScannerOverlayView.MODE_IDLE);
+        vfLabel.setText(R.string.scan_hint_aim);
+        vfLabel.setTextColor(Color.parseColor("#88FFFFFF"));
+        scanButton.setClickable(true);
+        scanButtonIcon.setVisibility(View.VISIBLE);
+        scanButtonSpinner.setVisibility(View.GONE);
+        scanButtonLabel.setText(R.string.action_start_scan);
+        hideResultCard();
     }
 
     @OptIn(markerClass = ExperimentalGetImage.class)
@@ -476,10 +821,6 @@ public class MainActivity extends AppCompatActivity {
         barcodeScanner.process(inputImage)
                 .addOnSuccessListener(barcodes -> {
                     if (!scanning) {
-                        return;
-                    }
-                    if (checkoutWaitBarcode != null) {
-                        handleCheckoutWait(barcodes, imageProxy);
                         return;
                     }
                     String value = pickBarcodeInFrame(barcodes, imageProxy);
@@ -506,42 +847,8 @@ public class MainActivity extends AppCompatActivity {
                 .addOnCompleteListener(task -> imageProxy.close());
     }
 
-    private void handleCheckoutWait(
-            java.util.List<Barcode> barcodes, ImageProxy imageProxy) {
-        boolean targetSeen = false;
-        for (Barcode barcode : barcodes) {
-            String raw = barcode.getRawValue();
-            if (raw != null && raw.trim().equals(checkoutWaitBarcode)) {
-                targetSeen = true;
-                break;
-            }
-        }
-        String inFrame = pickBarcodeInFrame(barcodes, imageProxy);
-        if (targetSeen || inFrame != null) {
-            checkoutWaitEmptyFrames = 0;
-            return;
-        }
-
-        checkoutWaitEmptyFrames++;
-        boolean enoughEmptyFrames = checkoutWaitEmptyFrames >= REQUIRED_EMPTY_FRAMES;
-        boolean enoughTime = System.currentTimeMillis() - checkoutWaitStartedAt >= 2000;
-        if (enoughEmptyFrames && enoughTime) {
-            checkoutWaitBarcode = null;
-            checkoutWaitEmptyFrames = 0;
-            checkoutWaitStartedAt = 0;
-            runOnUiThread(() -> {
-                if (!isFinishing() && !isDestroyed()) {
-                    showIdlePanel();
-                }
-            });
-        }
-    }
-
-    /**
-     * 只接受完整落在绿色取景框内的条码；框内有多个时取面积最大（离得最近、最完整）的一个。
-     */
     private String pickBarcodeInFrame(
-            java.util.List<Barcode> barcodes, ImageProxy imageProxy) {
+            List<Barcode> barcodes, ImageProxy imageProxy) {
         RectF frame = scannerOverlay.getFrameRect();
         if (frame.isEmpty()) {
             return null;
@@ -561,7 +868,6 @@ public class MainActivity extends AppCompatActivity {
             return null;
         }
 
-        // PreviewView 默认 FILL_CENTER：等比放大铺满并居中裁切。
         float scale = Math.max(viewWidth / imageWidth, viewHeight / imageHeight);
         float offsetX = (viewWidth - imageWidth * scale) / 2f;
         float offsetY = (viewHeight - imageHeight * scale) / 2f;
@@ -615,7 +921,309 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         scanning = false;
-        lookupBarcode(barcode);
+        pendingBarcode = null;
+        pendingFrames = 0;
+        pauseAnalyzer();
+
+        playSuccessTone();
+        vibrate();
+        scannerOverlay.playSuccess();
+        vfLabel.setText(R.string.scanning_label);
+
+        currentBarcode = barcode;
+        ioExecutor.execute(() -> {
+            Product product = dbHelper.findProduct(barcode);
+            runOnUiThread(() -> {
+                if (destroyed || isFinishing()) {
+                    return;
+                }
+                showResult(barcode, product);
+            });
+        });
+    }
+
+    private void showResult(String barcode, Product product) {
+        resultBarcode.setText(barcode);
+        resultProduct = product;
+
+        if (product != null) {
+            resultName.setText(product.name);
+            resultCategory.setText(categoryLabel(product.category));
+            resultCurrency.setVisibility(View.VISIBLE);
+            resultPrice.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
+            resultPrice.setTextColor(ContextCompat.getColor(this, R.color.ink));
+            animatePrice(product.priceCents);
+            resultCheckWrap.setVisibility(View.VISIBLE);
+            resultCheckWrap.setAlpha(0f);
+            resultCheckWrap.setScaleX(0.4f);
+            resultCheckWrap.setScaleY(0.4f);
+            resultCheckWrap.animate()
+                    .alpha(1f)
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setStartDelay(120)
+                    .setDuration(380)
+                    .setInterpolator(new OvershootInterpolator(1.5f))
+                    .start();
+            applyThumb(resultThumb, product.name, product.category, 14);
+            resultPrimary.setText(R.string.action_add_to_cart);
+            resultPrimary.setBackgroundResource(R.drawable.bg_btn_primary);
+            resultPrimary.setTextColor(ContextCompat.getColor(this, R.color.white));
+            resultPrimary.setOnClickListener(v -> addToCart(product, resultPrimary));
+            vfLabel.setText(getString(R.string.scan_ok, product.name));
+            vfLabel.setTextColor(Color.parseColor("#6EE7B7"));
+        } else {
+            resultName.setText(R.string.result_not_found);
+            resultCategory.setText(R.string.result_not_found_category);
+            resultCurrency.setVisibility(View.GONE);
+            resultPrice.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+            resultPrice.setText("—");
+            resultPrice.setTextColor(ContextCompat.getColor(this, R.color.ink3));
+            if (priceAnimator != null) {
+                priceAnimator.cancel();
+            }
+            resultCheckWrap.setVisibility(View.GONE);
+            applyThumb(resultThumb, "?", "", 14);
+            resultPrimary.setText(R.string.action_enter_price);
+            resultPrimary.setBackgroundResource(R.drawable.bg_btn_primary);
+            resultPrimary.setTextColor(ContextCompat.getColor(this, R.color.white));
+            resultPrimary.setOnClickListener(v ->
+                    showProductSheet(barcode, null, true));
+            vfLabel.setText(getString(R.string.scan_ok, barcode));
+            vfLabel.setTextColor(Color.parseColor("#6EE7B7"));
+        }
+        scanButton.setClickable(true);
+        scanButtonIcon.setVisibility(View.VISIBLE);
+        scanButtonSpinner.setVisibility(View.GONE);
+        scanButtonLabel.setText(R.string.action_start_scan);
+        expandResultCard();
+    }
+
+    private void animatePrice(long cents) {
+        if (priceAnimator != null) {
+            priceAnimator.cancel();
+        }
+        int target = (int) Math.min(cents, 99999999L);
+        priceAnimator = ValueAnimator.ofInt(0, target);
+        priceAnimator.setDuration(620);
+        priceAnimator.setInterpolator(EASE);
+        priceAnimator.addUpdateListener(animation -> {
+            int value = (int) animation.getAnimatedValue();
+            resultPrice.setText(MoneyUtils.formatCents(value));
+        });
+        priceAnimator.start();
+    }
+
+    private void expandResultCard() {
+        if (resultCard.getVisibility() == View.VISIBLE) {
+            ViewGroup.LayoutParams params = resultCard.getLayoutParams();
+            params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+            resultCard.setLayoutParams(params);
+            return;
+        }
+        if (resultHeightAnimator != null) {
+            resultHeightAnimator.cancel();
+        }
+        int width = resultCard.getWidth();
+        if (width <= 0) {
+            width = getResources().getDisplayMetrics().widthPixels - dpInt(32);
+        }
+        ViewGroup.LayoutParams params = resultCard.getLayoutParams();
+        params.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+        resultCard.setVisibility(View.VISIBLE);
+        resultCard.measure(
+                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int target = resultCard.getMeasuredHeight();
+        params.height = 0;
+        resultCard.setLayoutParams(params);
+        resultCard.setAlpha(0f);
+        resultCard.setTranslationY(dp(10));
+        resultCard.animate().alpha(1f).translationY(0f)
+                .setDuration(420).setInterpolator(EASE).start();
+
+        resultHeightAnimator = ValueAnimator.ofInt(0, target);
+        resultHeightAnimator.setDuration(440);
+        resultHeightAnimator.setInterpolator(EASE);
+        resultHeightAnimator.addUpdateListener(animation -> {
+            int value = (int) animation.getAnimatedValue();
+            ViewGroup.LayoutParams lp = resultCard.getLayoutParams();
+            lp.height = value;
+            resultCard.setLayoutParams(lp);
+        });
+        resultHeightAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                ViewGroup.LayoutParams lp = resultCard.getLayoutParams();
+                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
+                resultCard.setLayoutParams(lp);
+            }
+        });
+        resultHeightAnimator.start();
+
+        viewScan.postDelayed(() -> {
+            if (resultCard.getVisibility() != View.VISIBLE || scanning) {
+                return;
+            }
+            int bottom = resultCard.getBottom() + dpInt(16);
+            int targetScroll = Math.max(0, bottom - viewScan.getHeight());
+            viewScan.smoothScrollTo(0, targetScroll);
+        }, 520);
+    }
+
+    private void hideResultCard() {
+        if (priceAnimator != null) {
+            priceAnimator.cancel();
+            priceAnimator = null;
+        }
+        if (resultCard.getVisibility() != View.VISIBLE || resultCard.getHeight() <= 0) {
+            resultCard.setVisibility(View.GONE);
+            return;
+        }
+        if (resultHeightAnimator != null) {
+            resultHeightAnimator.cancel();
+        }
+        int start = resultCard.getHeight();
+        resultCard.animate().alpha(0f).translationY(dp(8))
+                .setDuration(220).start();
+        resultHeightAnimator = ValueAnimator.ofInt(start, 0);
+        resultHeightAnimator.setDuration(260);
+        resultHeightAnimator.setInterpolator(EASE);
+        resultHeightAnimator.addUpdateListener(animation -> {
+            int value = (int) animation.getAnimatedValue();
+            ViewGroup.LayoutParams lp = resultCard.getLayoutParams();
+            lp.height = value;
+            resultCard.setLayoutParams(lp);
+        });
+        resultHeightAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(android.animation.Animator animation) {
+                ViewGroup.LayoutParams lp = resultCard.getLayoutParams();
+                lp.height = 0;
+                resultCard.setLayoutParams(lp);
+                resultCard.setVisibility(View.GONE);
+            }
+        });
+        resultHeightAnimator.start();
+    }
+
+    private void playSuccessTone() {
+        try {
+            if (toneGenerator == null) {
+                toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
+            }
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 200);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to play success tone", e);
+        }
+    }
+
+    private void vibrate() {
+        try {
+            Vibrator vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (vibrator == null || !vibrator.hasVibrator()) {
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(VibrationEffect.createOneShot(
+                        18, VibrationEffect.DEFAULT_AMPLITUDE));
+            } else {
+                vibrator.vibrate(18);
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to vibrate", e);
+        }
+    }
+
+    private void focusCenter() {
+        if (previewView == null || previewView.getWidth() <= 0) {
+            return;
+        }
+        focusAt(previewView.getWidth() / 2f, previewView.getHeight() / 2f, false);
+    }
+
+    private void focusAt(float x, float y, boolean tap) {
+        if (camera == null) {
+            return;
+        }
+        try {
+            MeteringPointFactory factory = previewView.getMeteringPointFactory();
+            MeteringPoint point = factory.createPoint(x, y);
+            int flags = FocusMeteringAction.FLAG_AF;
+            if (tap) {
+                flags |= FocusMeteringAction.FLAG_AE;
+            }
+            FocusMeteringAction action = new FocusMeteringAction.Builder(point, flags)
+                    .setAutoCancelDuration(5, TimeUnit.SECONDS)
+                    .build();
+            camera.getCameraControl().startFocusAndMetering(action);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to focus camera", e);
+        }
+    }
+
+    private void toggleTorch() {
+        if (camera == null) {
+            showAppToast(getString(R.string.toast_camera_error));
+            return;
+        }
+        if (!camera.getCameraInfo().hasFlashUnit()) {
+            showAppToast(getString(R.string.toast_no_flash));
+            return;
+        }
+        torchOn = !torchOn;
+        camera.getCameraControl().enableTorch(torchOn);
+        updateTopAction();
+        showAppToast(getString(
+                torchOn ? R.string.toast_torch_on : R.string.toast_torch_off));
+    }
+
+    private void checkLowLight(ImageProxy imageProxy) {
+        if (torchOn || camera == null) {
+            darkFrames = 0;
+            return;
+        }
+        if (averageLuma(imageProxy) >= 45) {
+            darkFrames = 0;
+            return;
+        }
+        darkFrames++;
+        long now = System.currentTimeMillis();
+        if (darkFrames >= 30 && now - lastLowLightHintAt >= 60000) {
+            darkFrames = 0;
+            lastLowLightHintAt = now;
+            runOnUiThread(() -> {
+                if (!isFinishing() && !destroyed && scanning) {
+                    showAppToast(getString(R.string.toast_low_light));
+                }
+            });
+        }
+    }
+
+    private int averageLuma(ImageProxy imageProxy) {
+        if (imageProxy.getPlanes().length == 0) {
+            return 128;
+        }
+        ImageProxy.PlaneProxy plane = imageProxy.getPlanes()[0];
+        ByteBuffer buffer = plane.getBuffer();
+        int rowStride = plane.getRowStride();
+        int pixelStride = plane.getPixelStride();
+        int width = imageProxy.getWidth();
+        int height = imageProxy.getHeight();
+        long sum = 0;
+        int count = 0;
+        for (int y = 0; y < height; y += 16) {
+            int rowStart = y * rowStride;
+            for (int x = 0; x < width; x += 16) {
+                int index = rowStart + x * pixelStride;
+                if (index >= buffer.limit()) {
+                    break;
+                }
+                sum += buffer.get(index) & 0xFF;
+                count++;
+            }
+        }
+        return count == 0 ? 128 : (int) (sum / count);
     }
 
     private boolean isScannableBarcode(Barcode barcode, String value) {
@@ -668,288 +1276,84 @@ public class MainActivity extends AppCompatActivity {
         return expected == code.charAt(code.length() - 1) - '0';
     }
 
-    private void lookupBarcode(String barcode) {
-        scanning = false;
-        pendingBarcode = null;
-        pendingFrames = 0;
-        if (imageAnalysis != null) {
-            imageAnalysis.clearAnalyzer();
+    private String categoryLabel(String category) {
+        if (category == null || category.trim().isEmpty()) {
+            return "其他";
         }
-        scannerOverlay.setScanning(false);
-        playSuccessTone();
-
-        currentBarcode = barcode;
-        currentProduct = null;
-        state = STATE_LOOKUP;
-        showLookupPanel(barcode);
-
-        ioExecutor.execute(() -> {
-            Product product = dbHelper.findProduct(barcode);
-            runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) {
-                    return;
-                }
-                if (product != null) {
-                    if (checkoutMode) {
-                        addProductToCart(product);
-                    } else {
-                        showProduct(product);
-                    }
-                } else {
-                    showEmpty(barcode);
-                }
-            });
-        });
+        return category.trim();
     }
 
-    private void showProduct(Product product) {
-        currentProduct = product;
-        currentBarcode = product.barcode;
-        state = STATE_PRODUCT;
-        pauseScanning();
-
-        productName.setText(product.name);
-        productBarcode.setText(getString(R.string.barcode_prefix, product.barcode));
-        productPrice.setText(MoneyUtils.formatCents(product.priceCents));
-        showOnly(panelProduct);
-    }
-
-    private void playSuccessTone() {
-        try {
-            if (toneGenerator == null) {
-                toneGenerator = new ToneGenerator(AudioManager.STREAM_MUSIC, 100);
-            }
-            toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 200);
-        } catch (RuntimeException e) {
-            Log.w(TAG, "Unable to play success tone", e);
+    private int[] categoryColors(String category) {
+        switch (categoryLabel(category)) {
+            case "饮料":
+                return CAT_DRINK;
+            case "乳品":
+                return CAT_DAIRY;
+            case "零食":
+                return CAT_SNACK;
+            case "方便食品":
+                return CAT_INSTANT;
+            case "日化":
+                return CAT_DAILY;
+            default:
+                return CAT_DEFAULT;
         }
     }
 
-    private void showEmpty(String barcode) {
-        currentProduct = null;
-        currentBarcode = barcode;
-        state = STATE_EMPTY;
-        pauseScanning();
-
-        emptyBarcode.setText(getString(R.string.barcode_prefix, barcode));
-        showOnly(panelEmpty);
+    private void applyThumb(TextView view, String name, String category, float radiusDp) {
+        int[] colors = categoryColors(category);
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(colors[0]);
+        background.setCornerRadius(dp(radiusDp));
+        view.setBackground(background);
+        view.setTextColor(colors[1]);
+        view.setText(name == null || name.isEmpty() ? "?" : name.substring(0, 1));
     }
 
-    private void showIdlePanel() {
-        if (checkoutMode) {
-            idleTitle.setText(R.string.status_waiting_checkout);
-            idleSubtitle.setText(R.string.status_waiting_checkout_sub);
-        } else {
-            idleTitle.setText(R.string.status_waiting);
-            idleSubtitle.setText(R.string.status_waiting_sub);
-        }
-        updateCheckoutModeUi();
-        showOnly(panelIdle);
-    }
-
-    private void showLookupPanel(String barcode) {
-        idleTitle.setText(R.string.status_lookup);
-        idleSubtitle.setText(getString(R.string.barcode_prefix, barcode));
-        showOnly(panelIdle);
-    }
-
-    private void showPermissionPanel() {
-        state = STATE_PERMISSION;
-        pauseScanning();
-        showOnly(panelPermission);
-    }
-
-    private void showOnly(View panel) {
-        panelIdle.setVisibility(panel == panelIdle ? View.VISIBLE : View.GONE);
-        panelProduct.setVisibility(panel == panelProduct ? View.VISIBLE : View.GONE);
-        panelEmpty.setVisibility(panel == panelEmpty ? View.VISIBLE : View.GONE);
-        panelPermission.setVisibility(panel == panelPermission ? View.VISIBLE : View.GONE);
-    }
-
-    private void toggleTorch() {
-        if (camera == null) {
-            Toast.makeText(this, R.string.toast_camera_error, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (!camera.getCameraInfo().hasFlashUnit()) {
-            Toast.makeText(this, R.string.toast_no_flash, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        torchOn = !torchOn;
-        camera.getCameraControl().enableTorch(torchOn);
-        btnTorch.setImageTintList(ColorStateList.valueOf(
-                ContextCompat.getColor(this, torchOn ? R.color.accent : R.color.text_primary)));
-    }
-
-    private void focusCenter() {
-        if (previewView == null || previewView.getWidth() <= 0) {
-            return;
-        }
-        focusAt(previewView.getWidth() / 2f, previewView.getHeight() * 0.44f, false);
-    }
-
-    private void focusAt(float x, float y, boolean tap) {
-        if (camera == null) {
-            return;
-        }
-        try {
-            MeteringPointFactory factory = previewView.getMeteringPointFactory();
-            MeteringPoint point = factory.createPoint(x, y);
-            int flags = FocusMeteringAction.FLAG_AF;
-            if (tap) {
-                flags |= FocusMeteringAction.FLAG_AE;
-            }
-            FocusMeteringAction action = new FocusMeteringAction.Builder(point, flags)
-                    .setAutoCancelDuration(5, TimeUnit.SECONDS)
-                    .build();
-            camera.getCameraControl().startFocusAndMetering(action);
-        } catch (RuntimeException e) {
-            Log.w(TAG, "Unable to focus camera", e);
-        }
-    }
-
-    private void applyZoom(float ratio) {
-        float min = 1f;
-        float max = 8f;
-        if (camera != null) {
-            ZoomState state = camera.getCameraInfo().getZoomState().getValue();
-            if (state != null) {
-                min = state.getMinZoomRatio();
-                max = Math.min(state.getMaxZoomRatio(), 8f);
-            }
-        }
-        zoomRatio = Math.max(min, Math.min(ratio, Math.max(min, max)));
-        if (camera == null) {
-            return;
-        }
-        try {
-            camera.getCameraControl().setZoomRatio(zoomRatio);
-        } catch (RuntimeException e) {
-            Log.w(TAG, "Unable to zoom camera", e);
-        }
-    }
-
-    private void checkLowLight(ImageProxy imageProxy) {
-        if (torchOn || camera == null) {
-            darkFrames = 0;
-            return;
-        }
-        if (averageLuma(imageProxy) >= 45) {
-            darkFrames = 0;
-            return;
-        }
-        darkFrames++;
-        long now = System.currentTimeMillis();
-        if (darkFrames >= 30 && now - lastLowLightHintAt >= 60000) {
-            darkFrames = 0;
-            lastLowLightHintAt = now;
-            runOnUiThread(() -> {
-                if (!isFinishing() && !isDestroyed() && scanning) {
-                    Toast.makeText(
-                            MainActivity.this,
-                            R.string.toast_low_light,
-                            Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
-    }
-
-    private int averageLuma(ImageProxy imageProxy) {
-        if (imageProxy.getPlanes().length == 0) {
-            return 128;
-        }
-        ImageProxy.PlaneProxy plane = imageProxy.getPlanes()[0];
-        ByteBuffer buffer = plane.getBuffer();
-        int rowStride = plane.getRowStride();
-        int pixelStride = plane.getPixelStride();
-        int width = imageProxy.getWidth();
-        int height = imageProxy.getHeight();
-        long sum = 0;
-        int count = 0;
-        for (int y = 0; y < height; y += 16) {
-            int rowStart = y * rowStride;
-            for (int x = 0; x < width; x += 16) {
-                int index = rowStart + x * pixelStride;
-                if (index >= buffer.limit()) {
-                    break;
-                }
-                sum += buffer.get(index) & 0xFF;
-                count++;
-            }
-        }
-        return count == 0 ? 128 : (int) (sum / count);
-    }
-
-    private void toggleCheckoutMode() {
-        checkoutMode = !checkoutMode;
-        preferences.edit().putBoolean(PREF_CHECKOUT, checkoutMode).apply();
-        updateCheckoutModeUi();
-        if (state == STATE_IDLE) {
-            showIdlePanel();
-        }
-        Toast.makeText(
-                this,
-                checkoutMode ? R.string.checkout_mode_enabled : R.string.checkout_mode_disabled,
-                Toast.LENGTH_SHORT).show();
-    }
-
-    private void updateCheckoutModeUi() {
-        if (btnCheckoutMode == null) {
-            return;
-        }
-        btnCheckoutMode.setText(checkoutMode
-                ? R.string.checkout_mode_on
-                : R.string.checkout_mode_off);
-        btnCheckoutMode.setContentDescription(getString(R.string.checkout_mode_hint));
-    }
-
-    private void addCurrentProductToCart() {
-        if (currentProduct == null) {
-            return;
-        }
-        addProductToCart(currentProduct);
-    }
-
-    private void addProductToCart(Product product) {
+    private void addToCart(Product product, TextView feedbackButton) {
         ioExecutor.execute(() -> {
             dbHelper.addToCart(product);
             ProductDbHelper.CartSummary summary = dbHelper.getCartSummary();
             runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) {
+                if (destroyed || isFinishing()) {
                     return;
                 }
-                updateCartBadge(summary.totalQuantity);
-                Toast.makeText(
-                        MainActivity.this,
-                        getString(
-                                R.string.toast_added_cart,
-                                product.name,
-                                MoneyUtils.formatCents(summary.totalCents)),
-                        Toast.LENGTH_SHORT).show();
+                updateCartBadge(summary.totalQuantity, true);
+                showAppToast(getString(R.string.toast_added_cart_short, product.name));
+                if (feedbackButton != null) {
+                    feedbackButton.setText(R.string.toast_added);
+                    feedbackButton.setBackgroundResource(R.drawable.bg_btn_done);
+                    feedbackButton.postDelayed(() -> {
+                        if (feedbackButton == resultPrimary && resultProduct != null) {
+                            feedbackButton.setText(R.string.action_add_to_cart);
+                            feedbackButton.setBackgroundResource(R.drawable.bg_btn_primary);
+                        }
+                    }, 1000);
+                }
             });
         });
-        startBarcodeRemovalWait(product);
     }
 
-    private void startBarcodeRemovalWait(Product product) {
-        if (imageAnalysis == null) {
-            startScanning();
+    private void updateCartBadge(int totalQuantity, boolean pop) {
+        if (tabBadgeCart == null) {
             return;
         }
-        checkoutWaitBarcode = product.barcode;
-        checkoutWaitEmptyFrames = 0;
-        checkoutWaitStartedAt = System.currentTimeMillis();
-        pendingBarcode = null;
-        pendingFrames = 0;
-        scanning = true;
-        state = STATE_IDLE;
-        idleTitle.setText(R.string.status_checkout_added);
-        idleSubtitle.setText(getString(R.string.status_checkout_locked, product.name));
-        updateCheckoutModeUi();
-        showOnly(panelIdle);
-        scannerOverlay.setScanning(true);
-        imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
-        previewView.postDelayed(this::focusCenter, 300);
+        if (totalQuantity <= 0) {
+            tabBadgeCart.setVisibility(View.GONE);
+            return;
+        }
+        tabBadgeCart.setText(totalQuantity > 99 ? "99+" : String.valueOf(totalQuantity));
+        tabBadgeCart.setVisibility(View.VISIBLE);
+        if (pop) {
+            tabBadgeCart.setScaleX(0.5f);
+            tabBadgeCart.setScaleY(0.5f);
+            tabBadgeCart.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(360)
+                    .setInterpolator(new OvershootInterpolator(1.6f))
+                    .start();
+        }
     }
 
     private void refreshCartBadge() {
@@ -957,188 +1361,375 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         ioExecutor.execute(() -> {
-            if (isFinishing() || isDestroyed()) {
-                return;
-            }
             ProductDbHelper.CartSummary summary = dbHelper.getCartSummary();
-            runOnUiThread(() -> updateCartBadge(summary.totalQuantity));
+            runOnUiThread(() -> {
+                if (!destroyed && !isFinishing()) {
+                    updateCartBadge(summary.totalQuantity, false);
+                }
+            });
         });
     }
 
-    private void updateCartBadge(int totalQuantity) {
-        if (cartBadge == null) {
-            return;
-        }
-        if (totalQuantity <= 0) {
-            cartBadge.setVisibility(View.GONE);
-            return;
-        }
-        cartBadge.setText(totalQuantity > 99 ? "99+" : String.valueOf(totalQuantity));
-        cartBadge.setVisibility(View.VISIBLE);
+    private void loadCart() {
+        ioExecutor.execute(() -> {
+            List<CartItem> items = dbHelper.getCartItems();
+            ProductDbHelper.CartSummary summary = dbHelper.getCartSummary();
+            List<Product> products = dbHelper.getAllProducts();
+            Map<String, Product> productMap = new HashMap<>();
+            for (Product product : products) {
+                productMap.put(product.barcode, product);
+            }
+            runOnUiThread(() -> {
+                if (destroyed || isFinishing()) {
+                    return;
+                }
+                cartAdapter.setItems(items, productMap);
+                lastCartQuantity = summary.totalQuantity;
+                lastCartTotalCents = summary.totalCents;
+                cartCountText.setText(getString(
+                        R.string.cart_count, summary.totalQuantity));
+                animateCartTotal(summary.totalCents);
+                cartList.setVisibility(items.isEmpty() ? View.GONE : View.VISIBLE);
+                cartEmpty.setVisibility(items.isEmpty() ? View.VISIBLE : View.GONE);
+                checkoutBtn.setAlpha(summary.totalQuantity == 0 ? 0.4f : 1f);
+                checkoutBtn.setClickable(summary.totalQuantity > 0);
+                updateCartBadge(summary.totalQuantity, false);
+            });
+        });
     }
 
-    private void showProductDialog(Product existing) {
-        if (currentBarcode == null) {
+    private void animateCartTotal(long cents) {
+        if (cartTotalAnimator != null) {
+            cartTotalAnimator.cancel();
+        }
+        int target = (int) Math.min(cents, 99999999L);
+        cartTotalAnimator = ValueAnimator.ofInt(cartDisplayedCents, target);
+        cartTotalAnimator.setDuration(420);
+        cartTotalAnimator.setInterpolator(EASE);
+        cartTotalAnimator.addUpdateListener(animation ->
+                cartTotalValue.setText(MoneyUtils.formatCents(
+                        (int) animation.getAnimatedValue())));
+        cartTotalAnimator.start();
+        cartDisplayedCents = target;
+    }
+
+    private void changeCartQuantity(String barcode, int quantity, View qtyView) {
+        if (qtyView != null) {
+            qtyView.setScaleX(1.32f);
+            qtyView.setScaleY(1.32f);
+            qtyView.animate().scaleX(1f).scaleY(1f)
+                    .setDuration(360)
+                    .setInterpolator(new OvershootInterpolator(1.2f))
+                    .start();
+        }
+        ioExecutor.execute(() -> {
+            dbHelper.updateCartQuantity(barcode, quantity);
+            runOnUiThread(() -> {
+                if (!destroyed && !isFinishing()) {
+                    loadCart();
+                }
+            });
+        });
+    }
+
+    private void clearCartWithAnimation() {
+        if (lastCartQuantity == 0) {
+            showAppToast(getString(R.string.toast_checkout_empty));
             return;
         }
-        pauseScanning();
-        final String barcode = currentBarcode;
-        View content = LayoutInflater.from(this).inflate(R.layout.dialog_product, null, false);
+        cartList.animate().alpha(0f).setDuration(180).withEndAction(() -> {
+            ioExecutor.execute(() -> {
+                dbHelper.clearCart();
+                runOnUiThread(() -> {
+                    if (destroyed || isFinishing()) {
+                        return;
+                    }
+                    loadCart();
+                    cartList.setAlpha(1f);
+                    showAppToast(getString(R.string.toast_cart_cleared));
+                });
+            });
+        }).start();
+    }
+
+    private void checkout() {
+        if (lastCartQuantity == 0) {
+            showAppToast(getString(R.string.toast_checkout_empty));
+            return;
+        }
+        final long total = lastCartTotalCents;
+        final int quantity = (int) lastCartQuantity;
+        checkoutBtn.setClickable(false);
+        checkoutBtn.setText(R.string.action_checkout_busy);
+        checkoutBtn.animate().scaleX(0.97f).scaleY(0.97f).setDuration(120).start();
+        checkoutBtn.postDelayed(() -> ioExecutor.execute(() -> {
+            dbHelper.recordCheckout(total, quantity);
+            dbHelper.clearCart();
+            runOnUiThread(() -> {
+                if (destroyed || isFinishing()) {
+                    return;
+                }
+                loadCart();
+                loadStats();
+                checkoutBtn.setBackgroundResource(R.drawable.bg_btn_done);
+                checkoutBtn.setText(R.string.action_checkout_done);
+                checkoutBtn.animate().scaleX(1f).scaleY(1f)
+                        .setDuration(180).start();
+                showAppToast(getString(
+                        R.string.toast_checkout_done,
+                        MoneyUtils.formatCents(total)));
+                checkoutBtn.postDelayed(() -> {
+                    checkoutBtn.setBackgroundResource(R.drawable.bg_btn_dark);
+                    checkoutBtn.setText(R.string.cart_checkout);
+                }, 1400);
+            });
+        }), 350);
+    }
+
+    private void loadLibrary() {
+        ioExecutor.execute(() -> {
+            List<Product> products = dbHelper.getAllProducts();
+            runOnUiThread(() -> {
+                if (destroyed || isFinishing()) {
+                    return;
+                }
+                allProducts.clear();
+                allProducts.addAll(products);
+                applyLibraryFilter();
+            });
+        });
+    }
+
+    private void applyLibraryFilter() {
+        List<Product> filtered = new ArrayList<>();
+        for (Product product : allProducts) {
+            if (product.matches(libraryQuery)) {
+                filtered.add(product);
+            }
+        }
+        productAdapter.setItems(filtered);
+        if (allProducts.isEmpty()) {
+            libEmptyTitle.setText(R.string.products_empty);
+            libEmptySub.setText(R.string.products_empty_sub);
+        } else if (filtered.isEmpty()) {
+            libEmptyTitle.setText(R.string.products_no_match);
+            libEmptySub.setText(R.string.products_no_match_sub);
+        }
+        libEmpty.setVisibility(filtered.isEmpty() ? View.VISIBLE : View.GONE);
+        libList.setVisibility(filtered.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    private void showPopupMenu() {
+        View content = LayoutInflater.from(this)
+                .inflate(R.layout.menu_popup, null, false);
+        PopupWindow popup = new PopupWindow(
+                content, dpInt(190), ViewGroup.LayoutParams.WRAP_CONTENT, true);
+        popup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        popup.setOutsideTouchable(true);
+        popup.setElevation(dp(12));
+        content.findViewById(R.id.pop_scan).setOnClickListener(v -> {
+            popup.dismiss();
+            setTab(TAB_SCAN);
+            tbTitle.postDelayed(this::startScanSession, 300);
+        });
+        content.findViewById(R.id.pop_manual).setOnClickListener(v -> {
+            popup.dismiss();
+            showProductSheet("", null, false);
+        });
+        popup.showAsDropDown(tbAction, -dpInt(150), dpInt(6));
+    }
+
+    private void showProductSheet(String barcode, Product existing, boolean fromScan) {
+        View content = showSheet(R.layout.sheet_product);
+        TextView title = content.findViewById(R.id.sheet_title);
+        TextView sub = content.findViewById(R.id.sheet_sub);
+        EditText barcodeInput = content.findViewById(R.id.edit_barcode);
         EditText nameInput = content.findViewById(R.id.edit_name);
         EditText priceInput = content.findViewById(R.id.edit_price);
-        TextView barcodeView = content.findViewById(R.id.dialog_barcode);
-        barcodeView.setText(getString(R.string.barcode_prefix, barcode));
+        EditText categoryInput = content.findViewById(R.id.edit_category);
+        TextView deleteButton = content.findViewById(R.id.btn_delete);
 
-        final String[] brand = {existing != null ? existing.brand : ""};
-        final String[] spec = {existing != null ? existing.spec : ""};
+        final boolean isNew = existing == null;
+        final boolean canEditBarcode = isNew && !fromScan;
 
+        title.setText(isNew ? R.string.sheet_new_product : R.string.sheet_edit_product);
+        if (fromScan) {
+            sub.setVisibility(View.VISIBLE);
+            sub.setText(R.string.sheet_scan_product_sub);
+        } else if (existing != null) {
+            sub.setVisibility(View.VISIBLE);
+            sub.setText(R.string.sheet_product_sub);
+        } else {
+            sub.setVisibility(View.GONE);
+        }
+
+        String initialBarcode = existing != null ? existing.barcode : barcode;
+        barcodeInput.setText(initialBarcode);
+        barcodeInput.setEnabled(canEditBarcode);
+        if (!canEditBarcode) {
+            barcodeInput.setTextColor(ContextCompat.getColor(this, R.color.ink3));
+        }
         if (existing != null) {
             nameInput.setText(existing.name);
             nameInput.setSelection(nameInput.getText().length());
             priceInput.setText(MoneyUtils.formatCents(existing.priceCents));
+            categoryInput.setText(existing.category);
         }
-        nameInput.requestFocus();
+        deleteButton.setVisibility(existing == null ? View.GONE : View.VISIBLE);
 
-        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PriceScanner_Dialog)
-                .setTitle(existing == null ? R.string.dialog_add_title : R.string.dialog_edit_title)
-                .setView(content)
-                .setNegativeButton(R.string.action_cancel, null)
-                .setPositiveButton(R.string.action_save, null)
-                .create();
+        content.findViewById(R.id.btn_cancel).setOnClickListener(v -> closeSheet());
+        content.findViewById(R.id.btn_save).setOnClickListener(v -> {
+            String code = barcodeInput.getText().toString().trim();
+            String name = nameInput.getText().toString().trim();
+            String category = categoryInput.getText().toString().trim();
+            if (!code.matches("\\d{6,14}")) {
+                showAppToast(getString(R.string.error_barcode_digits));
+                return;
+            }
+            if (name.isEmpty()) {
+                nameInput.setError(getString(R.string.error_name));
+                return;
+            }
+            Long priceCents = MoneyUtils.parseYuanToCents(
+                    priceInput.getText().toString());
+            if (priceCents == null) {
+                priceInput.setError(getString(R.string.error_price));
+                return;
+            }
 
-        dialog.setOnShowListener(shown -> {
-            Button save = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            save.setOnClickListener(v -> {
-                String name = nameInput.getText().toString().trim();
-                if (name.isEmpty()) {
-                    nameInput.setError(getString(R.string.error_name));
+            final String finalName = name;
+            final String finalCategory = category;
+            final long finalPrice = priceCents;
+            final String finalCode = code;
+
+            ioExecutor.execute(() -> {
+                if (isNew && dbHelper.findProduct(finalCode) != null) {
+                    runOnUiThread(() -> showAppToast(
+                            getString(R.string.error_barcode_exists)));
                     return;
                 }
-
-                Long priceCents = MoneyUtils.parseYuanToCents(priceInput.getText().toString());
-                if (priceCents == null) {
-                    priceInput.setError(getString(R.string.error_price));
-                    return;
-                }
-
-                final String finalName = name;
-                final long finalPriceCents = priceCents;
-                ioExecutor.execute(() -> {
-                    Product product = dbHelper.saveProduct(
-                            barcode, finalName, brand[0], spec[0],
-                            finalPriceCents, "manual");
-                    runOnUiThread(() -> {
-                        if (isFinishing() || isDestroyed()) {
-                            return;
-                        }
-                        dialog.dismiss();
-                        Toast.makeText(
-                                MainActivity.this, R.string.toast_saved, Toast.LENGTH_SHORT).show();
-                        if (checkoutMode) {
-                            addProductToCart(product);
-                        } else {
-                            showProduct(product);
-                        }
-                    });
+                Product saved = dbHelper.saveProduct(
+                        finalCode,
+                        finalName,
+                        existing != null ? existing.brand : "",
+                        existing != null ? existing.spec : "",
+                        finalPrice,
+                        "manual",
+                        finalCategory);
+                runOnUiThread(() -> {
+                    if (destroyed || isFinishing()) {
+                        return;
+                    }
+                    closeSheet();
+                    loadLibrary();
+                    loadStats();
+                    if (resultProduct != null
+                            && resultProduct.barcode.equals(saved.barcode)) {
+                        showResult(saved.barcode, saved);
+                    } else if (fromScan && currentTab == TAB_SCAN) {
+                        showResult(saved.barcode, saved);
+                    }
+                    showAppToast(getString(R.string.toast_saved));
                 });
             });
         });
 
-        dialog.show();
+        deleteButton.setOnClickListener(v -> {
+            if (existing != null) {
+                confirmDeleteProduct(existing);
+            }
+        });
     }
 
-    private void showManualInputDialog() {
-        boolean wasScanning = scanning;
-        pauseScanning();
-
-        View content = LayoutInflater.from(this).inflate(R.layout.dialog_barcode, null, false);
-        EditText barcodeInput = content.findViewById(R.id.edit_barcode);
-        boolean[] submitted = {false};
-
-        AlertDialog dialog = new AlertDialog.Builder(this, R.style.Theme_PriceScanner_Dialog)
-                .setTitle(R.string.dialog_manual_title)
-                .setView(content)
+    private void confirmDeleteProduct(Product product) {
+        new AlertDialog.Builder(this, R.style.Theme_PriceScanner_Dialog)
+                .setTitle(R.string.delete_product_title)
+                .setMessage(getString(R.string.delete_product_message, product.name))
                 .setNegativeButton(R.string.action_cancel, null)
-                .setPositiveButton(R.string.action_manual_query, null)
-                .create();
+                .setPositiveButton(R.string.action_delete, (dialog, which) ->
+                        ioExecutor.execute(() -> {
+                            dbHelper.deleteProduct(product.barcode);
+                            runOnUiThread(() -> {
+                                if (destroyed || isFinishing()) {
+                                    return;
+                                }
+                                closeSheet();
+                                allProducts.removeIf(item ->
+                                        item.barcode.equals(product.barcode));
+                                applyLibraryFilter();
+                                loadStats();
+                                if (resultProduct != null
+                                        && resultProduct.barcode.equals(product.barcode)) {
+                                    resultProduct = null;
+                                    hideResultCard();
+                                    scannerOverlay.setMode(ScannerOverlayView.MODE_IDLE);
+                                    vfLabel.setText(R.string.scan_hint_aim);
+                                }
+                                showAppToast(getString(
+                                        R.string.toast_product_deleted,
+                                        product.name));
+                            });
+                        }))
+                .show();
+    }
 
-        dialog.setOnShowListener(shown -> {
-            Button query = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            query.setOnClickListener(v -> {
-                String code = barcodeInput.getText().toString().trim();
-                if (code.length() < 4) {
-                    barcodeInput.setError(getString(R.string.error_barcode));
+    private void loadStats() {
+        ioExecutor.execute(() -> {
+            int productCount = dbHelper.getAllProducts().size();
+            ProductDbHelper.CartSummary cart = dbHelper.getCartSummary();
+            ProductDbHelper.CheckoutStats checkout = dbHelper.getCheckoutStats();
+            runOnUiThread(() -> {
+                if (destroyed || isFinishing()) {
                     return;
                 }
-                submitted[0] = true;
-                dialog.dismiss();
-                lookupBarcode(code);
+                statLib.setText(String.valueOf(productCount));
+                statCart.setText(String.valueOf(cart.totalQuantity));
+                statCheckouts.setText(String.valueOf(checkout.count));
+                statRevenue.setText("¥" + MoneyUtils.formatCents(checkout.totalCents));
             });
         });
-
-        dialog.setOnDismissListener(ignored -> {
-            if (!submitted[0] && wasScanning) {
-                startScanning();
-            }
-        });
-
-        dialog.show();
-        barcodeInput.requestFocus();
     }
 
-    private void showOverflowMenu(View anchor) {
-        PopupMenu popup = new PopupMenu(this, anchor);
-        popup.getMenu().add(0, MENU_PRODUCTS, 0, R.string.menu_products);
-        popup.getMenu().add(0, MENU_EXPORT_SHARE, 1, R.string.menu_export_share);
-        popup.getMenu().add(0, MENU_EXPORT_SAVE, 2, R.string.menu_export_save);
-        popup.getMenu().add(0, MENU_IMPORT, 3, R.string.menu_import);
-        popup.getMenu().add(0, MENU_RESTORE, 4, R.string.menu_restore);
-        popup.getMenu().add(0, MENU_ABOUT, 5, R.string.menu_about);
-        popup.setOnMenuItemClickListener(item -> {
-            switch (item.getItemId()) {
-                case MENU_PRODUCTS:
-                    startActivity(new Intent(this, ProductsActivity.class));
-                    return true;
-                case MENU_EXPORT_SHARE:
+    private void showExportSheet() {
+        ioExecutor.execute(() -> {
+            int count = dbHelper.getAllProducts().size();
+            runOnUiThread(() -> {
+                if (destroyed || isFinishing()) {
+                    return;
+                }
+                View content = showSheet(R.layout.sheet_export);
+                TextView sub = content.findViewById(R.id.export_sub);
+                sub.setText(getString(R.string.sheet_export_sub, count));
+                content.findViewById(R.id.export_share).setOnClickListener(v -> {
+                    closeSheet();
                     exportData(false);
-                    return true;
-                case MENU_EXPORT_SAVE:
+                });
+                content.findViewById(R.id.export_save).setOnClickListener(v -> {
+                    closeSheet();
                     exportData(true);
-                    return true;
-                case MENU_IMPORT:
-                    openImportPicker();
-                    return true;
-                case MENU_RESTORE:
-                    showBackups();
-                    return true;
-                case MENU_ABOUT:
-                    showAboutDialog();
-                    return true;
-                default:
-                    return false;
-            }
+                });
+                content.findViewById(R.id.export_cancel).setOnClickListener(
+                        v -> closeSheet());
+            });
         });
-        popup.show();
     }
 
     private void exportData(boolean saveToFile) {
-        Toast.makeText(this, R.string.toast_exporting, Toast.LENGTH_SHORT).show();
+        showAppToast(getString(R.string.toast_exporting));
         ioExecutor.execute(() -> {
             try {
                 List<Product> products = dbHelper.getAllProducts();
                 List<ProductInfo> info = dbHelper.getAllProductInfo();
                 if (products.isEmpty() && info.isEmpty()) {
-                    runOnUiThread(() -> Toast.makeText(
-                            MainActivity.this,
-                            R.string.error_export_no_data,
-                            Toast.LENGTH_SHORT).show());
+                    runOnUiThread(() -> showAppToast(
+                            getString(R.string.error_export_no_data)));
                     return;
                 }
                 String json = DataTransfer.buildJson(
                         products, info, System.currentTimeMillis());
                 File file = DataTransfer.writeExportFile(this, json);
                 runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) {
+                    if (destroyed || isFinishing()) {
                         return;
                     }
                     if (saveToFile) {
@@ -1150,10 +1741,8 @@ public class MainActivity extends AppCompatActivity {
                 });
             } catch (Exception e) {
                 Log.w(TAG, "Export failed", e);
-                runOnUiThread(() -> Toast.makeText(
-                        MainActivity.this,
-                        R.string.toast_export_failed,
-                        Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> showAppToast(
+                        getString(R.string.toast_export_failed)));
             }
         });
     }
@@ -1167,10 +1756,11 @@ public class MainActivity extends AppCompatActivity {
             send.putExtra(Intent.EXTRA_STREAM, uri);
             send.setClipData(ClipData.newUri(getContentResolver(), file.getName(), uri));
             send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            startActivity(Intent.createChooser(send, getString(R.string.menu_export_share)));
+            startActivity(Intent.createChooser(
+                    send, getString(R.string.action_share_family)));
         } catch (Exception e) {
             Log.w(TAG, "Share failed", e);
-            Toast.makeText(this, R.string.toast_export_failed, Toast.LENGTH_SHORT).show();
+            showAppToast(getString(R.string.toast_export_failed));
         }
     }
 
@@ -1192,16 +1782,12 @@ public class MainActivity extends AppCompatActivity {
                     output.write(buffer, 0, read);
                 }
                 output.flush();
-                runOnUiThread(() -> Toast.makeText(
-                        MainActivity.this,
-                        R.string.toast_export_ready,
-                        Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> showAppToast(
+                        getString(R.string.toast_export_ready)));
             } catch (Exception e) {
                 Log.w(TAG, "Save export failed", e);
-                runOnUiThread(() -> Toast.makeText(
-                        MainActivity.this,
-                        R.string.toast_export_failed,
-                        Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> showAppToast(
+                        getString(R.string.toast_export_failed)));
             }
         });
     }
@@ -1212,7 +1798,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startImport(Uri uri) {
-        Toast.makeText(this, R.string.toast_importing, Toast.LENGTH_SHORT).show();
+        showAppToast(getString(R.string.toast_importing));
         ioExecutor.execute(() -> {
             try (InputStream input = getContentResolver().openInputStream(uri)) {
                 if (input == null) {
@@ -1221,17 +1807,15 @@ public class MainActivity extends AppCompatActivity {
                 DataTransfer.ImportData data = DataTransfer.parse(
                         DataTransfer.readText(input));
                 runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) {
+                    if (destroyed || isFinishing()) {
                         return;
                     }
                     showImportPreview(data);
                 });
             } catch (Exception e) {
                 Log.w(TAG, "Import read failed", e);
-                runOnUiThread(() -> Toast.makeText(
-                        MainActivity.this,
-                        getString(R.string.toast_import_failed, messageOf(e)),
-                        Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> showAppToast(getString(
+                        R.string.toast_import_failed, messageOf(e))));
             }
         });
     }
@@ -1240,7 +1824,7 @@ public class MainActivity extends AppCompatActivity {
         ioExecutor.execute(() -> {
             ImportPreview preview = buildImportPreview(data);
             runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) {
+                if (destroyed || isFinishing()) {
                     return;
                 }
                 String date = data.exportedAt <= 0
@@ -1284,7 +1868,7 @@ public class MainActivity extends AppCompatActivity {
             boolean replace,
             ImportPreview preview,
             boolean restore) {
-        Toast.makeText(this, R.string.toast_importing, Toast.LENGTH_SHORT).show();
+        showAppToast(getString(R.string.toast_importing));
         ioExecutor.execute(() -> {
             try {
                 List<Product> currentProducts = dbHelper.getAllProducts();
@@ -1301,39 +1885,35 @@ public class MainActivity extends AppCompatActivity {
                 dbHelper.mergeImportProductInfo(data.productInfo);
 
                 runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) {
+                    if (destroyed || isFinishing()) {
                         return;
                     }
                     if (restore) {
-                        Toast.makeText(
-                                MainActivity.this,
-                                R.string.backup_done,
-                                Toast.LENGTH_SHORT).show();
+                        showAppToast(getString(R.string.backup_done));
                     } else if (replace) {
-                        Toast.makeText(
-                                MainActivity.this,
-                                getString(
-                                        R.string.toast_import_done_replace,
-                                        data.products.size()),
-                                Toast.LENGTH_SHORT).show();
+                        showAppToast(getString(
+                                R.string.toast_import_done_replace,
+                                data.products.size()));
                     } else {
-                        Toast.makeText(
-                                MainActivity.this,
-                                getString(
-                                        R.string.toast_import_done,
-                                        preview.newCount,
-                                        preview.updateCount,
-                                        preview.localOnly),
-                                Toast.LENGTH_SHORT).show();
+                        showAppToast(getString(
+                                R.string.toast_import_done,
+                                preview.newCount,
+                                preview.updateCount,
+                                preview.localOnly));
                     }
-                    startScanning();
+                    loadLibrary();
+                    loadStats();
+                    refreshCartBadge();
+                    if (currentTab == TAB_SCAN) {
+                        hideResultCard();
+                        scannerOverlay.setMode(ScannerOverlayView.MODE_IDLE);
+                        vfLabel.setText(R.string.scan_hint_aim);
+                    }
                 });
             } catch (Exception e) {
                 Log.w(TAG, "Import failed", e);
-                runOnUiThread(() -> Toast.makeText(
-                        MainActivity.this,
-                        getString(R.string.toast_import_failed, messageOf(e)),
-                        Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> showAppToast(getString(
+                        R.string.toast_import_failed, messageOf(e))));
             }
         });
     }
@@ -1373,73 +1953,151 @@ public class MainActivity extends AppCompatActivity {
         return new ImportPreview(newCount, updateCount, localOnly, localProducts.size());
     }
 
-    private void showBackups() {
+    private void showBackupsSheet() {
         ioExecutor.execute(() -> {
             List<File> backups = DataTransfer.listBackups(this);
             runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) {
+                if (destroyed || isFinishing()) {
                     return;
                 }
                 if (backups.isEmpty()) {
-                    Toast.makeText(
-                            MainActivity.this,
-                            R.string.backup_empty,
-                            Toast.LENGTH_SHORT).show();
+                    showAppToast(getString(R.string.backup_empty));
                     return;
                 }
-                String[] labels = new String[backups.size()];
+                View content = showSheet(R.layout.sheet_backups);
+                LinearLayout rows = content.findViewById(R.id.backup_rows);
                 SimpleDateFormat format =
                         new SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault());
-                for (int i = 0; i < backups.size(); i++) {
-                    labels[i] = format.format(new Date(backups.get(i).lastModified()));
+                for (File file : backups) {
+                    TextView row = new TextView(this);
+                    row.setText(format.format(new Date(file.lastModified())));
+                    row.setTextColor(ContextCompat.getColor(this, R.color.ink));
+                    row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                    row.setGravity(Gravity.CENTER_VERTICAL);
+                    row.setPadding(dpInt(16), 0, dpInt(16), 0);
+                    row.setBackgroundResource(R.drawable.bg_btn_ghost);
+                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, dpInt(48));
+                    params.bottomMargin = dpInt(8);
+                    row.setLayoutParams(params);
+                    row.setOnClickListener(v -> {
+                        closeSheet();
+                        confirmRestore(file);
+                    });
+                    rows.addView(row);
                 }
-                new AlertDialog.Builder(this, R.style.Theme_PriceScanner_Dialog)
-                        .setTitle(R.string.backup_title)
-                        .setMessage(R.string.backup_select)
-                        .setItems(labels, (dialog, which) -> restoreBackup(backups.get(which)))
-                        .setNegativeButton(R.string.action_cancel, null)
-                        .show();
+                content.findViewById(R.id.backup_cancel).setOnClickListener(
+                        v -> closeSheet());
             });
         });
     }
 
-    private void restoreBackup(File file) {
+    private void confirmRestore(File file) {
         ioExecutor.execute(() -> {
             try {
-                DataTransfer.ImportData data = DataTransfer.parse(DataTransfer.readFile(file));
+                DataTransfer.ImportData data = DataTransfer.parse(
+                        DataTransfer.readFile(file));
                 ImportPreview preview = buildImportPreview(data);
                 runOnUiThread(() -> {
-                    if (isFinishing() || isDestroyed()) {
+                    if (destroyed || isFinishing()) {
                         return;
                     }
-                    String name = file.getName();
                     new AlertDialog.Builder(this, R.style.Theme_PriceScanner_Dialog)
                             .setTitle(R.string.backup_title)
-                            .setMessage(getString(R.string.backup_confirm, name))
+                            .setMessage(getString(
+                                    R.string.backup_confirm, file.getName()))
                             .setNegativeButton(R.string.action_cancel, null)
-                            .setPositiveButton(R.string.backup_restore_action, (dialog, which) ->
-                                    applyImport(data, true, preview, true))
+                            .setPositiveButton(
+                                    R.string.backup_restore_action,
+                                    (dialog, which) ->
+                                            applyImport(data, true, preview, true))
                             .show();
                 });
             } catch (Exception e) {
                 Log.w(TAG, "Restore backup failed", e);
-                runOnUiThread(() -> Toast.makeText(
-                        MainActivity.this,
-                        getString(R.string.toast_import_failed, messageOf(e)),
-                        Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> showAppToast(getString(
+                        R.string.toast_import_failed, messageOf(e))));
             }
         });
     }
 
-    private void showAboutDialog() {
-        String message = getString(R.string.about_version, "1.4")
-                + "\n" + getString(R.string.about_github)
-                + "\n\n" + getString(R.string.settings_about);
-        new AlertDialog.Builder(this, R.style.Theme_PriceScanner_Dialog)
-                .setTitle(R.string.menu_about)
-                .setMessage(message)
-                .setPositiveButton(R.string.action_close, null)
-                .show();
+    private void showAboutSheet() {
+        View content = showSheet(R.layout.sheet_about);
+        TextView version = content.findViewById(R.id.about_version);
+        version.setText(getString(R.string.about_version, "1.6"));
+        content.findViewById(R.id.about_close).setOnClickListener(v -> closeSheet());
+    }
+
+    private View showSheet(int layoutRes) {
+        sheetPanel.animate().cancel();
+        sheetMask.animate().cancel();
+        sheetBody.removeAllViews();
+        View content = LayoutInflater.from(this)
+                .inflate(layoutRes, sheetBody, false);
+        sheetBody.addView(content);
+        sheetOpen = true;
+        sheetMask.setVisibility(View.VISIBLE);
+        sheetMask.setAlpha(0f);
+        sheetMask.animate().alpha(1f).setDuration(220).start();
+        sheetPanel.setTranslationY(dp(600));
+        sheetPanel.setAlpha(0f);
+        sheetContainer.setVisibility(View.VISIBLE);
+        sheetContainer.post(() -> {
+            sheetPanel.setTranslationY(sheetPanel.getHeight());
+            sheetPanel.animate()
+                    .translationY(0f)
+                    .alpha(1f)
+                    .setDuration(400)
+                    .setInterpolator(EASE)
+                    .start();
+        });
+        return content;
+    }
+
+    private void closeSheet() {
+        if (!sheetOpen) {
+            return;
+        }
+        sheetOpen = false;
+        sheetPanel.animate()
+                .translationY(sheetPanel.getHeight())
+                .setDuration(300)
+                .setInterpolator(EASE)
+                .withEndAction(() -> {
+                    sheetContainer.setVisibility(View.GONE);
+                    sheetBody.removeAllViews();
+                })
+                .start();
+        sheetMask.animate().alpha(0f).setDuration(220)
+                .withEndAction(() -> sheetMask.setVisibility(View.GONE))
+                .start();
+    }
+
+    private void showAppToast(String message) {
+        if (appToast == null || destroyed || isFinishing()) {
+            return;
+        }
+        if (toastHideRunnable != null) {
+            appToast.removeCallbacks(toastHideRunnable);
+        }
+        appToast.animate().cancel();
+        appToast.setText(message);
+        appToast.setVisibility(View.VISIBLE);
+        appToast.setAlpha(0f);
+        appToast.setTranslationY(dp(12));
+        appToast.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(300)
+                .setInterpolator(EASE)
+                .start();
+        toastHideRunnable = () -> appToast.animate()
+                .alpha(0f)
+                .translationY(dp(12))
+                .setDuration(250)
+                .withEndAction(() -> appToast.setVisibility(View.GONE))
+                .start();
+        appToast.postDelayed(toastHideRunnable, 1600);
     }
 
     private void handleIncomingIntent(Intent intent) {
@@ -1472,68 +2130,29 @@ public class MainActivity extends AppCompatActivity {
         handleIncomingIntent(intent);
     }
 
-    private static class ImportPreview {
-        final int newCount;
-        final int updateCount;
-        final int localOnly;
-        final int localCount;
-
-        ImportPreview(int newCount, int updateCount, int localOnly, int localCount) {
-            this.newCount = newCount;
-            this.updateCount = updateCount;
-            this.localOnly = localOnly;
-            this.localCount = localCount;
-        }
-    }
-
-    private static String messageOf(Exception e) {
-        String message = e.getMessage();
-        return message == null || message.isEmpty() ? e.getClass().getSimpleName() : message;
-    }
-
-    private void refreshCurrentProduct() {
-        if (state != STATE_PRODUCT || currentBarcode == null) {
-            return;
-        }
-        String barcode = currentBarcode;
-        ioExecutor.execute(() -> {
-            Product product = dbHelper.findProduct(barcode);
-            runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed() || state != STATE_PRODUCT) {
-                    return;
-                }
-                if (product != null) {
-                    showProduct(product);
-                } else {
-                    showEmpty(barcode);
-                }
-            });
-        });
-    }
-
     @Override
     protected void onResume() {
         super.onResume();
         refreshCartBadge();
-        refreshCurrentProduct();
-        if (!hasCameraPermission()) {
-            return;
-        }
-        if (cameraProvider == null) {
+        if (currentTab == TAB_SCAN
+                && hasCameraPermission()
+                && cameraProvider == null) {
             startCamera();
-        } else if (state == STATE_IDLE && !scanning) {
-            startScanning();
+        }
+        if (scanning && imageAnalysis != null) {
+            imageAnalysis.setAnalyzer(cameraExecutor, this::analyzeImage);
         }
     }
 
     @Override
     protected void onPause() {
-        pauseScanning();
+        pauseAnalyzer();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        destroyed = true;
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
         }
@@ -1554,5 +2173,205 @@ public class MainActivity extends AppCompatActivity {
             toneGenerator = null;
         }
         super.onDestroy();
+    }
+
+    private float dp(float value) {
+        return value * getResources().getDisplayMetrics().density;
+    }
+
+    private int dpInt(float value) {
+        return (int) dp(value);
+    }
+
+    private static String messageOf(Exception e) {
+        String message = e.getMessage();
+        return message == null || message.isEmpty()
+                ? e.getClass().getSimpleName() : message;
+    }
+
+    private static class ImportPreview {
+        final int newCount;
+        final int updateCount;
+        final int localOnly;
+        final int localCount;
+
+        ImportPreview(int newCount, int updateCount, int localOnly, int localCount) {
+            this.newCount = newCount;
+            this.updateCount = updateCount;
+            this.localOnly = localOnly;
+            this.localCount = localCount;
+        }
+    }
+
+    private class CartAdapter extends BaseAdapter {
+
+        private final List<CartItem> items = new ArrayList<>();
+        private final Map<String, Product> products = new HashMap<>();
+
+        void setItems(List<CartItem> newItems, Map<String, Product> productMap) {
+            items.clear();
+            items.addAll(newItems);
+            products.clear();
+            products.putAll(productMap);
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public int getCount() {
+            return items.size();
+        }
+
+        @Override
+        public CartItem getItem(int position) {
+            return items.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            ViewHolder holder;
+            boolean isNew = convertView == null;
+            if (isNew) {
+                convertView = LayoutInflater.from(MainActivity.this)
+                        .inflate(R.layout.item_cart, parent, false);
+                holder = new ViewHolder(convertView);
+                convertView.setTag(holder);
+            } else {
+                holder = (ViewHolder) convertView.getTag();
+            }
+
+            CartItem item = getItem(position);
+            Product product = products.get(item.barcode);
+            String category = product == null ? "" : product.category;
+            applyThumb(holder.thumb, item.name, category, 13);
+            holder.name.setText(item.name);
+            holder.meta.setText(getString(
+                    R.string.cart_item_meta,
+                    MoneyUtils.formatCents(item.unitPriceCents),
+                    item.barcode));
+            holder.quantity.setText(String.valueOf(item.quantity));
+
+            holder.minus.setOnClickListener(v ->
+                    changeCartQuantity(item.barcode, item.quantity - 1, holder.quantity));
+            holder.plus.setOnClickListener(v ->
+                    changeCartQuantity(item.barcode, item.quantity + 1, holder.quantity));
+
+            if (isNew) {
+                convertView.setAlpha(0f);
+                convertView.setTranslationY(dp(12));
+                convertView.animate()
+                        .alpha(1f)
+                        .translationY(0f)
+                        .setDuration(380)
+                        .setStartDelay(Math.min(position, 8) * 45L)
+                        .setInterpolator(EASE)
+                        .start();
+            }
+            return convertView;
+        }
+    }
+
+    private static class ViewHolder {
+        final TextView thumb;
+        final TextView name;
+        final TextView meta;
+        final TextView quantity;
+        final ImageView minus;
+        final ImageView plus;
+
+        ViewHolder(View view) {
+            thumb = view.findViewById(R.id.item_thumb);
+            name = view.findViewById(R.id.item_name);
+            meta = view.findViewById(R.id.item_meta);
+            quantity = view.findViewById(R.id.item_quantity);
+            minus = view.findViewById(R.id.btn_minus);
+            plus = view.findViewById(R.id.btn_plus);
+        }
+    }
+
+    private class ProductAdapter extends BaseAdapter {
+
+        private final List<Product> items = new ArrayList<>();
+
+        void setItems(List<Product> newItems) {
+            items.clear();
+            items.addAll(newItems);
+            notifyDataSetChanged();
+        }
+
+        @Override
+        public int getCount() {
+            return items.size();
+        }
+
+        @Override
+        public Product getItem(int position) {
+            return items.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            ProductViewHolder holder;
+            boolean isNew = convertView == null;
+            if (isNew) {
+                convertView = LayoutInflater.from(MainActivity.this)
+                        .inflate(R.layout.item_product, parent, false);
+                holder = new ProductViewHolder(convertView);
+                convertView.setTag(holder);
+            } else {
+                holder = (ProductViewHolder) convertView.getTag();
+            }
+
+            Product product = getItem(position);
+            applyThumb(holder.thumb, product.name, product.category, 12);
+            holder.name.setText(product.name);
+            String meta = product.barcode;
+            if (!product.category.isEmpty()) {
+                meta = meta + " · " + product.category;
+            }
+            holder.meta.setText(meta);
+            holder.price.setText(getString(
+                    R.string.product_price_format,
+                    MoneyUtils.formatCents(product.priceCents)));
+            holder.add.setOnClickListener(v -> addToCart(product, null));
+
+            if (isNew) {
+                convertView.setAlpha(0f);
+                convertView.setTranslationY(dp(12));
+                convertView.animate()
+                        .alpha(1f)
+                        .translationY(0f)
+                        .setDuration(380)
+                        .setStartDelay(Math.min(position, 9) * 38L)
+                        .setInterpolator(EASE)
+                        .start();
+            }
+            return convertView;
+        }
+    }
+
+    private static class ProductViewHolder {
+        final TextView thumb;
+        final TextView name;
+        final TextView meta;
+        final TextView price;
+        final ImageView add;
+
+        ProductViewHolder(View view) {
+            thumb = view.findViewById(R.id.item_thumb);
+            name = view.findViewById(R.id.item_name);
+            meta = view.findViewById(R.id.item_meta);
+            price = view.findViewById(R.id.item_price);
+            add = view.findViewById(R.id.btn_item_add);
+        }
     }
 }

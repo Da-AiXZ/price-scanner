@@ -14,11 +14,12 @@ import java.util.Map;
 public class ProductDbHelper extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "product_prices.db";
-    private static final int DB_VERSION = 2;
+    private static final int DB_VERSION = 3;
 
     private static final String TABLE_PRODUCTS = "products";
     private static final String TABLE_INFO = "product_info";
     private static final String TABLE_CART = "cart_items";
+    private static final String TABLE_CHECKOUT = "checkout_history";
 
     public ProductDbHelper(Context context) {
         super(context, DB_NAME, null, DB_VERSION);
@@ -29,6 +30,7 @@ public class ProductDbHelper extends SQLiteOpenHelper {
         createProductsTable(db, TABLE_PRODUCTS);
         createInfoTable(db);
         createCartTable(db);
+        createCheckoutTable(db);
     }
 
     private void createProductsTable(SQLiteDatabase db, String table) {
@@ -40,7 +42,8 @@ public class ProductDbHelper extends SQLiteOpenHelper {
                 + "price_cents INTEGER NOT NULL, "
                 + "price_updated_at INTEGER NOT NULL, "
                 + "name_updated_at INTEGER NOT NULL, "
-                + "source TEXT NOT NULL DEFAULT 'manual')");
+                + "source TEXT NOT NULL DEFAULT 'manual', "
+                + "category TEXT NOT NULL DEFAULT '')");
     }
 
     private void createInfoTable(SQLiteDatabase db) {
@@ -65,6 +68,14 @@ public class ProductDbHelper extends SQLiteOpenHelper {
                 + "added_at INTEGER NOT NULL)");
     }
 
+    private void createCheckoutTable(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS " + TABLE_CHECKOUT + " ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                + "total_cents INTEGER NOT NULL, "
+                + "item_count INTEGER NOT NULL, "
+                + "checked_out_at INTEGER NOT NULL)");
+    }
+
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         if (oldVersion < 2) {
@@ -80,6 +91,13 @@ public class ProductDbHelper extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE " + TABLE_PRODUCTS + "_new RENAME TO " + TABLE_PRODUCTS);
             createInfoTable(db);
             createCartTable(db);
+        }
+        if (oldVersion < 3) {
+            if (oldVersion >= 2) {
+                db.execSQL("ALTER TABLE " + TABLE_PRODUCTS
+                        + " ADD COLUMN category TEXT NOT NULL DEFAULT ''");
+            }
+            createCheckoutTable(db);
         }
     }
 
@@ -132,10 +150,17 @@ public class ProductDbHelper extends SQLiteOpenHelper {
     public Product saveProduct(
             String barcode, String name, String brand, String spec,
             long priceCents, String source) {
+        return saveProduct(barcode, name, brand, spec, priceCents, source, "");
+    }
+
+    public Product saveProduct(
+            String barcode, String name, String brand, String spec,
+            long priceCents, String source, String category) {
         long now = System.currentTimeMillis();
         Product product = new Product(
                 barcode, name, brand == null ? "" : brand, spec == null ? "" : spec,
-                priceCents, now, now, source == null ? "manual" : source);
+                priceCents, now, now, source == null ? "manual" : source,
+                category == null ? "" : category);
         upsertProduct(product);
         return product;
     }
@@ -148,7 +173,8 @@ public class ProductDbHelper extends SQLiteOpenHelper {
     private String[] productColumns() {
         return new String[]{
                 "barcode", "name", "brand", "spec",
-                "price_cents", "price_updated_at", "name_updated_at", "source"};
+                "price_cents", "price_updated_at", "name_updated_at", "source",
+                "category"};
     }
 
     private Product readProduct(Cursor cursor) {
@@ -160,7 +186,8 @@ public class ProductDbHelper extends SQLiteOpenHelper {
                 cursor.getLong(4),
                 cursor.getLong(5),
                 cursor.getLong(6),
-                cursor.getString(7));
+                cursor.getString(7),
+                cursor.getString(8));
     }
 
     private ContentValues productValues(Product product) {
@@ -173,6 +200,7 @@ public class ProductDbHelper extends SQLiteOpenHelper {
         values.put("price_updated_at", product.priceUpdatedAt);
         values.put("name_updated_at", product.nameUpdatedAt);
         values.put("source", product.source == null ? "manual" : product.source);
+        values.put("category", product.category == null ? "" : product.category);
         return values;
     }
 
@@ -214,6 +242,12 @@ public class ProductDbHelper extends SQLiteOpenHelper {
                 String source = useIncomingName ? product.source : local.source;
                 long nameUpdatedAt = useIncomingName
                         ? product.nameUpdatedAt : local.nameUpdatedAt;
+                String category = local.category;
+                if (useIncomingName
+                        && product.category != null
+                        && !product.category.isEmpty()) {
+                    category = product.category;
+                }
 
                 ContentValues values = new ContentValues();
                 values.put("barcode", local.barcode);
@@ -224,6 +258,7 @@ public class ProductDbHelper extends SQLiteOpenHelper {
                 values.put("price_updated_at", priceUpdatedAt);
                 values.put("name_updated_at", nameUpdatedAt);
                 values.put("source", source == null ? "manual" : source);
+                values.put("category", category == null ? "" : category);
                 db.update(TABLE_PRODUCTS, values,
                         "barcode = ?", new String[]{local.barcode});
             }
@@ -424,6 +459,29 @@ public class ProductDbHelper extends SQLiteOpenHelper {
         getWritableDatabase().delete(TABLE_CART, null, null);
     }
 
+    public void recordCheckout(long totalCents, int itemCount) {
+        ContentValues values = new ContentValues();
+        values.put("total_cents", totalCents);
+        values.put("item_count", itemCount);
+        values.put("checked_out_at", System.currentTimeMillis());
+        getWritableDatabase().insert(TABLE_CHECKOUT, null, values);
+    }
+
+    public CheckoutStats getCheckoutStats() {
+        long totalCents = 0;
+        int count = 0;
+        try (Cursor cursor = getReadableDatabase().query(
+                TABLE_CHECKOUT,
+                new String[]{"total_cents"},
+                null, null, null, null, null)) {
+            while (cursor.moveToNext()) {
+                totalCents += cursor.getLong(0);
+                count++;
+            }
+        }
+        return new CheckoutStats(count, totalCents);
+    }
+
     public CartSummary getCartSummary() {
         long totalCents = 0;
         int totalQuantity = 0;
@@ -441,6 +499,16 @@ public class ProductDbHelper extends SQLiteOpenHelper {
             }
         }
         return new CartSummary(totalQuantity, totalCents, distinctCount);
+    }
+
+    public static class CheckoutStats {
+        public final int count;
+        public final long totalCents;
+
+        public CheckoutStats(int count, long totalCents) {
+            this.count = count;
+            this.totalCents = totalCents;
+        }
     }
 
     public static class CartSummary {

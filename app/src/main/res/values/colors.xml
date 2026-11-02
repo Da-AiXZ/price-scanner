@@ -1,15 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#0B0D10</color>
-    <color name="card">#171B21</color>
-    <color name="card_stroke">#2A3038</color>
-    <color name="secondary_bg">#232830</color>
-    <color name="accent">#00E676</color>
-    <color name="accent_pressed">#00C766</color>
-    <color name="text_primary">#F5F7FA</color>
-    <color name="text_muted">#98A2AE</color>
-    <color name="on_accent">#062B17</color>
-    <color name="scrim_start">#C4000000</color>
+    <color name="bg">#F5F5F7</color>
+    <color name="card">#FFFFFF</color>
+    <color name="ink">#0B0B0E</color>
+    <color name="ink2">#6B6B76</color>
+    <color name="ink3">#9A9AA5</color>
+    <color name="line">#14000000</color>
+    <color name="line2">#0E000000</color>
+    <color name="fill">#1F787880</color>
+    <color name="fill2">#14787880</color>
+    <color name="blue">#007AFF</color>
+    <color name="blue_soft">#1A007AFF</color>
+    <color name="green">#16A34A</color>
+    <color name="mint">#34D399</color>
+    <color name="red">#FF3B30</color>
+    <color name="white">#FFFFFF</color>
+    <color name="on_ink">#FFFFFF</color>
+    <color name="tab_inactive">#9A9AA5</color>
+    <color name="sheet_mask">#52000000</color>
+    <color name="scan_bg">#08080C</color>
+
+    <!-- 兼容旧布局的别名 -->
+    <color name="accent">#007AFF</color>
+    <color name="accent_pressed">#0062CC</color>
+    <color name="text_primary">#0B0B0E</color>
+    <color name="text_muted">#9A9AA5</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="card_stroke">#14000000</color>
+    <color name="secondary_bg">#1F787880</color>
+    <color name="scrim_start">#CC000000</color>
     <color name="scrim_end">#00000000</color>
-    <color name="dialog_bg">#1A1E24</color>
+    <color name="dialog_bg">#FFFFFF</color>
 </resources>
