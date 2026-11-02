@@ -101,6 +101,20 @@ public class ProductDbHelper extends SQLiteOpenHelper {
         return readAllProducts(getReadableDatabase());
     }
 
+    public boolean deleteProduct(String barcode) {
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            int removed = db.delete(
+                    TABLE_PRODUCTS, "barcode = ?", new String[]{barcode});
+            db.delete(TABLE_INFO, "barcode = ?", new String[]{barcode});
+            db.setTransactionSuccessful();
+            return removed > 0;
+        } finally {
+            db.endTransaction();
+        }
+    }
+
     private List<Product> readAllProducts(SQLiteDatabase db) {
         List<Product> products = new ArrayList<>();
         try (Cursor cursor = db.query(

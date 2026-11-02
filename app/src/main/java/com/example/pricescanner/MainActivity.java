@@ -18,6 +18,7 @@ import android.util.Log;
 import android.util.Size;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -45,6 +46,7 @@ import androidx.camera.core.ImageProxy;
 import androidx.camera.core.MeteringPoint;
 import androidx.camera.core.MeteringPointFactory;
 import androidx.camera.core.Preview;
+import androidx.camera.core.ZoomState;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 import androidx.core.content.ContextCompat;
@@ -65,6 +67,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -89,6 +92,7 @@ public class MainActivity extends AppCompatActivity {
     private static final int MENU_IMPORT = 3;
     private static final int MENU_RESTORE = 4;
     private static final int MENU_ABOUT = 5;
+    private static final int MENU_PRODUCTS = 6;
 
     private static final int STATE_IDLE = 0;
     private static final int STATE_LOOKUP = 1;
@@ -140,6 +144,14 @@ public class MainActivity extends AppCompatActivity {
     private String checkoutWaitBarcode;
     private int checkoutWaitEmptyFrames;
     private long checkoutWaitStartedAt;
+    private float zoomRatio = 1f;
+    private float zoomAtScaleStart = 1f;
+    private boolean multiTouch;
+    private float touchDownX;
+    private float touchDownY;
+    private ScaleGestureDetector scaleDetector;
+    private int darkFrames;
+    private long lastLowLightHintAt;
 
     private ActivityResultLauncher<String> permissionLauncher;
     private ActivityResultLauncher<String> createDocumentLauncher;
@@ -169,7 +181,9 @@ public class MainActivity extends AppCompatActivity {
                         Barcode.FORMAT_EAN_8,
                         Barcode.FORMAT_UPC_A,
                         Barcode.FORMAT_UPC_E,
-                        Barcode.FORMAT_CODE_128)
+                        Barcode.FORMAT_CODE_128,
+                        Barcode.FORMAT_ITF,
+                        Barcode.FORMAT_CODE_39)
                 .build());
 
         permissionLauncher = registerForActivityResult(
@@ -264,10 +278,44 @@ public class MainActivity extends AppCompatActivity {
         btnMore.setOnClickListener(this::showOverflowMenu);
         btnCart.setOnClickListener(v -> startActivity(new Intent(this, CartActivity.class)));
         btnCheckoutMode.setOnClickListener(v -> toggleCheckoutMode());
+        scaleDetector = new ScaleGestureDetector(this,
+                new ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScaleBegin(ScaleGestureDetector detector) {
+                        zoomAtScaleStart = zoomRatio;
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onScale(ScaleGestureDetector detector) {
+                        applyZoom(zoomAtScaleStart * detector.getScaleFactor());
+                        return true;
+                    }
+                });
+
         previewView.setOnTouchListener((v, event) -> {
-            if (event.getAction() == MotionEvent.ACTION_UP) {
-                focusAt(event.getX(), event.getY(), true);
-                v.performClick();
+            scaleDetector.onTouchEvent(event);
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    touchDownX = event.getX();
+                    touchDownY = event.getY();
+                    multiTouch = false;
+                    break;
+                case MotionEvent.ACTION_POINTER_DOWN:
+                    multiTouch = true;
+                    break;
+                case MotionEvent.ACTION_UP:
+                    float dx = event.getX() - touchDownX;
+                    float dy = event.getY() - touchDownY;
+                    float slop = 24 * getResources().getDisplayMetrics().density;
+                    if (!multiTouch && dx * dx + dy * dy < slop * slop) {
+                        focusAt(event.getX(), event.getY(), true);
+                        v.performClick();
+                    }
+                    multiTouch = false;
+                    break;
+                default:
+                    break;
             }
             return true;
         });
@@ -361,6 +409,7 @@ public class MainActivity extends AppCompatActivity {
                 if (torchOn && camera.getCameraInfo().hasFlashUnit()) {
                     camera.getCameraControl().enableTorch(true);
                 }
+                applyZoom(zoomRatio);
 
                 previewView.postDelayed(this::focusCenter, 600);
 
@@ -437,8 +486,10 @@ public class MainActivity extends AppCompatActivity {
                     if (value == null) {
                         pendingBarcode = null;
                         pendingFrames = 0;
+                        checkLowLight(imageProxy);
                         return;
                     }
+                    darkFrames = 0;
                     if (value.equals(pendingBarcode)) {
                         pendingFrames++;
                     } else {
@@ -515,8 +566,13 @@ public class MainActivity extends AppCompatActivity {
         float offsetX = (viewWidth - imageWidth * scale) / 2f;
         float offsetY = (viewHeight - imageHeight * scale) / 2f;
 
+        float centerX = frame.centerX();
+        float centerY = frame.centerY();
+        float halfDiagonal = (float) Math.hypot(
+                frame.width() / 2f, frame.height() / 2f);
+
         String bestValue = null;
-        float bestArea = 0;
+        float bestScore = 0;
         for (Barcode barcode : barcodes) {
             String raw = barcode.getRawValue();
             if (raw == null) {
@@ -542,8 +598,12 @@ public class MainActivity extends AppCompatActivity {
                 continue;
             }
             float area = mapped.width() * mapped.height();
-            if (area > bestArea) {
-                bestArea = area;
+            float distance = (float) Math.hypot(
+                    mapped.centerX() - centerX, mapped.centerY() - centerY);
+            float distanceRatio = Math.min(1f, distance / halfDiagonal);
+            float score = area * (1.5f - distanceRatio);
+            if (score > bestScore) {
+                bestScore = score;
                 bestValue = value;
             }
         }
@@ -575,6 +635,12 @@ public class MainActivity extends AppCompatActivity {
             case Barcode.FORMAT_UPC_E:
                 return value.length() == 8 && isDigits(value);
             case Barcode.FORMAT_CODE_128:
+                return value.length() >= 6;
+            case Barcode.FORMAT_ITF:
+                return value.length() >= 6
+                        && value.length() <= 14
+                        && isDigits(value);
+            case Barcode.FORMAT_CODE_39:
                 return value.length() >= 6;
             default:
                 return false;
@@ -740,6 +806,78 @@ public class MainActivity extends AppCompatActivity {
         } catch (RuntimeException e) {
             Log.w(TAG, "Unable to focus camera", e);
         }
+    }
+
+    private void applyZoom(float ratio) {
+        float min = 1f;
+        float max = 8f;
+        if (camera != null) {
+            ZoomState state = camera.getCameraInfo().getZoomState().getValue();
+            if (state != null) {
+                min = state.getMinZoomRatio();
+                max = Math.min(state.getMaxZoomRatio(), 8f);
+            }
+        }
+        zoomRatio = Math.max(min, Math.min(ratio, Math.max(min, max)));
+        if (camera == null) {
+            return;
+        }
+        try {
+            camera.getCameraControl().setZoomRatio(zoomRatio);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Unable to zoom camera", e);
+        }
+    }
+
+    private void checkLowLight(ImageProxy imageProxy) {
+        if (torchOn || camera == null) {
+            darkFrames = 0;
+            return;
+        }
+        if (averageLuma(imageProxy) >= 45) {
+            darkFrames = 0;
+            return;
+        }
+        darkFrames++;
+        long now = System.currentTimeMillis();
+        if (darkFrames >= 30 && now - lastLowLightHintAt >= 60000) {
+            darkFrames = 0;
+            lastLowLightHintAt = now;
+            runOnUiThread(() -> {
+                if (!isFinishing() && !isDestroyed() && scanning) {
+                    Toast.makeText(
+                            MainActivity.this,
+                            R.string.toast_low_light,
+                            Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+    }
+
+    private int averageLuma(ImageProxy imageProxy) {
+        if (imageProxy.getPlanes().length == 0) {
+            return 128;
+        }
+        ImageProxy.PlaneProxy plane = imageProxy.getPlanes()[0];
+        ByteBuffer buffer = plane.getBuffer();
+        int rowStride = plane.getRowStride();
+        int pixelStride = plane.getPixelStride();
+        int width = imageProxy.getWidth();
+        int height = imageProxy.getHeight();
+        long sum = 0;
+        int count = 0;
+        for (int y = 0; y < height; y += 16) {
+            int rowStart = y * rowStride;
+            for (int x = 0; x < width; x += 16) {
+                int index = rowStart + x * pixelStride;
+                if (index >= buffer.limit()) {
+                    break;
+                }
+                sum += buffer.get(index) & 0xFF;
+                count++;
+            }
+        }
+        return count == 0 ? 128 : (int) (sum / count);
     }
 
     private void toggleCheckoutMode() {
@@ -950,6 +1088,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showOverflowMenu(View anchor) {
         PopupMenu popup = new PopupMenu(this, anchor);
+        popup.getMenu().add(0, MENU_PRODUCTS, 0, R.string.menu_products);
         popup.getMenu().add(0, MENU_EXPORT_SHARE, 1, R.string.menu_export_share);
         popup.getMenu().add(0, MENU_EXPORT_SAVE, 2, R.string.menu_export_save);
         popup.getMenu().add(0, MENU_IMPORT, 3, R.string.menu_import);
@@ -957,6 +1096,9 @@ public class MainActivity extends AppCompatActivity {
         popup.getMenu().add(0, MENU_ABOUT, 5, R.string.menu_about);
         popup.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
+                case MENU_PRODUCTS:
+                    startActivity(new Intent(this, ProductsActivity.class));
+                    return true;
                 case MENU_EXPORT_SHARE:
                     exportData(false);
                     return true;
@@ -1349,10 +1491,31 @@ public class MainActivity extends AppCompatActivity {
         return message == null || message.isEmpty() ? e.getClass().getSimpleName() : message;
     }
 
+    private void refreshCurrentProduct() {
+        if (state != STATE_PRODUCT || currentBarcode == null) {
+            return;
+        }
+        String barcode = currentBarcode;
+        ioExecutor.execute(() -> {
+            Product product = dbHelper.findProduct(barcode);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed() || state != STATE_PRODUCT) {
+                    return;
+                }
+                if (product != null) {
+                    showProduct(product);
+                } else {
+                    showEmpty(barcode);
+                }
+            });
+        });
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
         refreshCartBadge();
+        refreshCurrentProduct();
         if (!hasCameraPermission()) {
             return;
         }

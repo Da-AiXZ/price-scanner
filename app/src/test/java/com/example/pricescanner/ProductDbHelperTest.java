@@ -1,7 +1,9 @@
 package com.example.pricescanner;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
@@ -170,12 +172,44 @@ public class ProductDbHelperTest {
     }
 
     @Test
+    public void deletesProductAndCachedInfo() {
+        deleteDatabase();
+        try (ProductDbHelper helper = new ProductDbHelper(context())) {
+            Product product = helper.saveProduct(
+                    "6901234567892", "可乐", "可口可乐", "500ml", 350, "manual");
+            helper.upsertProductInfo(new ProductInfo(
+                    product.barcode, "可乐", "可口可乐", "500ml",
+                    "drink", "openfoodfacts", 1000L, true, false));
+
+            assertTrue(helper.deleteProduct(product.barcode));
+            assertNull(helper.findProduct(product.barcode));
+            assertNull(helper.findProductInfo(product.barcode));
+            assertFalse(helper.deleteProduct("0000000000000"));
+        }
+    }
+
+    @Test
+    public void productSearchMatchesNameBarcodeBrandAndSpec() {
+        Product product = new Product(
+                "6901234567892", "六神花露水", "六神", "195ml",
+                1290, 1000L, 1000L, "manual");
+        assertTrue(ProductsActivity.matches(product, ""));
+        assertTrue(ProductsActivity.matches(product, "花露水"));
+        assertTrue(ProductsActivity.matches(product, "690123"));
+        assertTrue(ProductsActivity.matches(product, "六神"));
+        assertTrue(ProductsActivity.matches(product, "195"));
+        assertFalse(ProductsActivity.matches(product, "可乐"));
+    }
+
+    @Test
     public void inflatesMainAndCartLayouts() {
         Context themed = new ContextThemeWrapper(context(), R.style.Theme_PriceScanner);
         LayoutInflater inflater = LayoutInflater.from(themed);
         assertNotNull(inflater.inflate(R.layout.activity_main, null));
         assertNotNull(inflater.inflate(R.layout.activity_cart, null));
         assertNotNull(inflater.inflate(R.layout.item_cart, null));
+        assertNotNull(inflater.inflate(R.layout.activity_products, null));
+        assertNotNull(inflater.inflate(R.layout.item_product, null));
         assertNotNull(inflater.inflate(R.layout.dialog_product, null));
     }
 }
