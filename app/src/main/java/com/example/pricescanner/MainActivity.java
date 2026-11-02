@@ -105,6 +105,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "PriceScanner";
     private static final String PREFS_NAME = "settings";
     private static final String PREF_CAMERA_REQUESTED = "camera_requested";
+    private static final String PREF_TUTORIAL_SEEN = "tutorial_seen";
 
     private static final int TAB_SCAN = 0;
     private static final int TAB_CART = 1;
@@ -303,6 +304,22 @@ public class MainActivity extends AppCompatActivity {
         applyTab(TAB_SCAN, false);
         refreshCartBadge();
         handleIncomingIntent(getIntent());
+        maybeShowTutorial(savedInstanceState);
+    }
+
+    private void maybeShowTutorial(Bundle savedInstanceState) {
+        if (savedInstanceState != null) {
+            return;
+        }
+        Intent intent = getIntent();
+        String action = intent == null ? null : intent.getAction();
+        if (Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action)) {
+            return;
+        }
+        if (preferences.getBoolean(PREF_TUTORIAL_SEEN, false)) {
+            return;
+        }
+        startActivity(new Intent(this, TutorialActivity.class));
     }
 
     private void setupWindowInsets() {
@@ -503,6 +520,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupDataPage() {
+        findViewById(R.id.action_tutorial).setOnClickListener(v ->
+                startActivity(new Intent(this, TutorialActivity.class)));
         findViewById(R.id.action_export).setOnClickListener(v -> showExportSheet());
         findViewById(R.id.action_import).setOnClickListener(v -> openImportPicker());
         findViewById(R.id.action_restore).setOnClickListener(v -> showBackupsSheet());
@@ -1965,7 +1984,7 @@ public class MainActivity extends AppCompatActivity {
     private void showAboutSheet() {
         View content = showSheet(R.layout.sheet_about);
         TextView version = content.findViewById(R.id.about_version);
-        version.setText(getString(R.string.about_version, "1.8"));
+        version.setText(getString(R.string.about_version, "1.9"));
         content.findViewById(R.id.about_close).setOnClickListener(v -> closeSheet());
     }
 

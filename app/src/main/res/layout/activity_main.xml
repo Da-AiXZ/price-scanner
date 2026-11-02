@@ -756,6 +756,46 @@
                         android:paddingBottom="2dp">
 
                         <LinearLayout
+                            android:id="@+id/action_tutorial"
+                            android:layout_width="match_parent"
+                            android:layout_height="52dp"
+                            android:clickable="true"
+                            android:focusable="true"
+                            android:gravity="center_vertical"
+                            android:orientation="horizontal"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp">
+
+                            <ImageView
+                                android:layout_width="18dp"
+                                android:layout_height="18dp"
+                                android:src="@drawable/ic_help"
+                                android:tint="@color/blue" />
+
+                            <TextView
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginStart="12dp"
+                                android:layout_weight="1"
+                                android:text="@string/tutorial_entry"
+                                android:textColor="@color/blue"
+                                android:textSize="14sp"
+                                android:textStyle="bold" />
+
+                            <ImageView
+                                android:layout_width="14dp"
+                                android:layout_height="14dp"
+                                android:src="@drawable/ic_chevron"
+                                android:tint="@color/ink3" />
+                        </LinearLayout>
+
+                        <View
+                            android:layout_width="match_parent"
+                            android:layout_height="0.5dp"
+                            android:layout_marginStart="46dp"
+                            android:background="@color/line2" />
+
+                        <LinearLayout
                             android:id="@+id/action_export"
                             android:layout_width="match_parent"
                             android:layout_height="52dp"

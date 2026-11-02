@@ -228,6 +228,7 @@ public class ProductDbHelperTest {
         LayoutInflater inflater = LayoutInflater.from(themed);
         assertNotNull(inflater.inflate(R.layout.activity_main, null));
         assertNotNull(inflater.inflate(R.layout.activity_scan_add, null));
+        assertNotNull(inflater.inflate(R.layout.activity_tutorial, null));
         assertNotNull(inflater.inflate(R.layout.item_cart, null));
         assertNotNull(inflater.inflate(R.layout.item_product, null));
         assertNotNull(inflater.inflate(R.layout.sheet_product, null));

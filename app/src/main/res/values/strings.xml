@@ -183,4 +183,74 @@
     <string name="scan_add_hint">将商品条码对准绿色框内</string>
     <string name="scan_add_success">识别成功 · %1$s</string>
     <string name="toast_start_scan_first">请先开始扫描</string>
+
+    <!-- 新手教程 -->
+    <string name="tutorial_title">使用教程</string>
+    <string name="tutorial_skip">跳过</string>
+    <string name="tutorial_prev">上一步</string>
+    <string name="tutorial_next">下一步</string>
+    <string name="tutorial_finish">完成</string>
+    <string name="tutorial_step_format">第 %1$d / %2$d 步</string>
+    <string name="tutorial_tip_label">小提示</string>
+    <string name="tutorial_entry">使用教程 · 新手必看</string>
+
+    <string name="tutorial_chapter_1">第 1 章 · 开始之前</string>
+    <string name="tutorial_chapter_2">第 2 章 · 第一次使用</string>
+    <string name="tutorial_chapter_3">第 3 章 · 扫描查价</string>
+    <string name="tutorial_chapter_4">第 4 章 · 收银</string>
+    <string name="tutorial_chapter_5">第 5 章 · 商品库</string>
+    <string name="tutorial_chapter_6">第 6 章 · 数据与备份</string>
+    <string name="tutorial_chapter_7">第 7 章 · 完成</string>
+
+    <string name="tutorial_welcome_title">欢迎使用扫码查价</string>
+    <string name="tutorial_welcome_body">这个软件能帮你做三件事：\n① 扫商品条码，马上看到价格\n② 把商品加进收银车，自动算总价\n③ 管理商品资料和营业数据\n\n下面我一步一步带你走一遍，点下面的「下一步」就行。</string>
+    <string name="tutorial_welcome_tip">大概 2 分钟看完。以后忘了，可以到「数据 → 使用教程」再看。</string>
+
+    <string name="tutorial_permission_title">第一次会问你要相机权限</string>
+    <string name="tutorial_permission_body">点「开始扫描」后，手机会弹出提示，问是否允许使用相机。\n\n① 点「允许」\n② 如果不小心点了「禁止」，要到手机的「设置 → 应用 → 扫码查价 → 权限」里把相机打开\n\n没有相机权限，就不能扫码。</string>
+    <string name="tutorial_permission_tip">相机只用来扫码，不会乱拍照。</string>
+
+    <string name="tutorial_scan_title">怎样扫码查价</string>
+    <string name="tutorial_scan_body">① 在底部点「扫描」，一般打开软件就在这一页\n② 点黑色大按钮「开始扫描」\n③ 把商品包装上黑白相间的条形码，完整放进中间的取景框\n④ 听到「滴」一声，相机会自动关闭，下面会出现商品名称和价格\n\n不用按拍照键，拿稳等它自己识别。</string>
+    <string name="tutorial_scan_tip">条码要完整放进框里；太近、太远、反光都可能扫不出来。</string>
+
+    <string name="tutorial_result_title">看到价格以后怎么做</string>
+    <string name="tutorial_result_body">识别成功后，下面会出现一张商品卡片：\n\n① 左边「再扫一次」：继续扫下一个商品\n② 右边「加入收银车」：把当前商品放进收银清单\n③ 点商品名字或左边的方块：可以修改名称和价格\n\n如果只想查价，看完点「再扫一次」或关掉页面就行。</string>
+    <string name="tutorial_result_tip">「加入收银车」不会马上收钱，最后到收银页一起结算。</string>
+
+    <string name="tutorial_notfound_title">扫到没录过的商品</string>
+    <string name="tutorial_notfound_body">如果显示「未收录的商品」：\n\n① 点「录入价格」\n② 填商品名称和价格，有分类就填分类\n③ 点「保存」\n\n保存后再扫这个条码，就能直接看到价格了。</string>
+    <string name="tutorial_notfound_tip">条码会自动填好，只要填名称和价格。</string>
+
+    <string name="tutorial_trouble_title">扫不出来怎么办</string>
+    <string name="tutorial_trouble_body">按顺序试这几招：\n\n① 光线太暗：点右上角的「闪电」开手电筒\n② 镜头脏了：擦一下手机镜头\n③ 对焦不准：在取景框里轻轻点一下商品\n④ 条码破损或弯曲：换个角度；散装商品可以到商品库用「手动输入添加」\n⑤ 还是不行：点「再扫一次」，重新对准</string>
+    <string name="tutorial_trouble_tip">手电筒只在扫描页用，退出扫描会自动关闭。</string>
+
+    <string name="tutorial_cart_title">收银车怎么用</string>
+    <string name="tutorial_cart_body">在底部点「收银」，这里就是你的购物清单：\n\n① 每一行是一件商品，右边用「-」「+」改数量\n② 数量减到 0，这件商品就会从清单里删掉\n③ 最下面显示「合计」，是所有商品的总价\n④ 点右上角的垃圾桶图标（清空）可以整单删掉，重新开始</string>
+    <string name="tutorial_cart_tip">商品名下面会显示单价和这件商品的小计。</string>
+
+    <string name="tutorial_checkout_title">怎样结算</string>
+    <string name="tutorial_checkout_body">① 先核对清单和合计金额\n② 点最下面的黑色按钮「结算」\n③ 结算成功后，清单会清空，这次金额会记到「数据」页的「已完成结算」和「累计金额」\n\n注意：点「结算」会直接完成，不会弹二次确认，也不会帮你收钱。</string>
+    <string name="tutorial_checkout_tip">真正收钱还是用你的微信、支付宝或现金，这个软件只负责算账和记账。</string>
+
+    <string name="tutorial_library_title">查找和修改商品</string>
+    <string name="tutorial_library_body">在底部点「商品库」：\n\n① 最上面的搜索框，可以输入名称、条码或品牌\n② 点任意一件商品，会弹出详情\n③ 在详情里可以改名称、价格、分类\n④ 改完点「保存」；不想改了，点「取消」\n⑤ 要删除商品，点最下面的红色「删除」</string>
+    <string name="tutorial_library_tip">扫完价发现价格不对，也可以点扫描结果里的商品名字直接改。</string>
+
+    <string name="tutorial_add_title">怎样添加新商品</string>
+    <string name="tutorial_add_body">① 在「商品库」点右上角的「+」\n② 会出来两个选项：\n「扫描输入添加」：打开单独的扫码页，适合有条码的商品\n「手动输入添加」：适合没有条码、条码坏了的商品\n③ 扫描输入页：左上角返回，右上角手电筒；识别到条码会自动弹出表单\n④ 填好名称、价格、分类，点「保存」\n⑤ 保存后会关掉表单继续扫；都扫完了点左上角返回</string>
+    <string name="tutorial_add_tip">保存后的商品会出现在商品库里。</string>
+
+    <string name="tutorial_data_title">看统计和备份数据</string>
+    <string name="tutorial_data_body">在底部点「数据」，上面四个数字：\n① 商品库条目：一共录了多少种商品\n② 收银车件数：现在清单里有多少件\n③ 已完成结算：一共结算了多少单\n④ 累计金额：一共卖出了多少钱\n\n下面的「数据管理」：\n① 使用教程：就是你现在看的这个，随时可以重看\n② 导出数据：把商品资料发家人或存成文件\n③ 导入数据：换手机时把数据导回来\n④ 恢复自动备份：恢复本手机以前的备份\n⑤ 关于：查看版本说明</string>
+    <string name="tutorial_data_tip">建议每周点一次「导出数据」，存到手机文件或发给家人。</string>
+
+    <string name="tutorial_backup_title">换手机、备份要注意</string>
+    <string name="tutorial_backup_body">① 点「导出数据」，把文件存到手机或通过微信发给家人\n② 在新手机上装好软件，点「导入数据」选那个文件\n③ 导入会问「合并」还是「完全覆盖」：\n合并：保留新手机已有商品，更新同条码的价格\n完全覆盖：用文件里的数据全部替换（会先自动备份）\n④「恢复自动备份」只能恢复本手机里保留的最近几次备份</string>
+    <string name="tutorial_backup_tip">卸载软件会清掉手机里的数据，换手机前一定先导出。</string>
+
+    <string name="tutorial_done_title">可以开始用了</string>
+    <string name="tutorial_done_body">记住三个最常用的操作：\n\n① 查价：扫描 → 开始扫描 → 对准条码\n② 收银：看到价格 → 加入收银车 → 收银页点结算\n③ 改价或添加：到商品库，点商品或右上角「+」\n\n以后忘了怎么用，随时回来再看一遍。</string>
+    <string name="tutorial_done_tip">入口：底部「数据」→「使用教程」。</string>
 </resources>
